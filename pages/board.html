@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>게시판</title>
+
+  <link
+    rel="stylesheet"
+    href="/static/css/style.css"
+  >
+
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+
+  <style>
+    #postMap {
+      width: 100%;
+      height: 350px;
+      margin-top: 12px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .map-help {
+      margin: 8px 0 0;
+      font-size: 14px;
+      opacity: 0.75;
+    }
+
+    #selectedLocation {
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    #imagePreview {
+      display: none;
+      width: 100%;
+      max-height: 300px;
+      object-fit: contain;
+      margin-top: 12px;
+      border-radius: 10px;
+    }
+
+    .post-image {
+      display: block;
+      width: min(100%, 400px);
+      max-height: 320px;
+      object-fit: cover;
+      margin-top: 10px;
+      border-radius: 10px;
+    }
+
+    .post-map {
+      width: 100%;
+      height: 220px;
+      margin-top: 10px;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .post-location {
+      margin-top: 6px;
+      font-size: 13px;
+      opacity: 0.75;
+    }
+
+    .post-actions {
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+
+<body data-require-auth="true">
+
+  <header id="nav"></header>
+
+
+  <main>
+
+    <h1>게시판</h1>
+
+
+    <!-- ================================================= -->
+    <!-- 제보 작성 -->
+    <!-- ================================================= -->
+
+    <section class="card">
+
+      <h2>새 제보</h2>
+
+
+      <!-- 내용 -->
+
+      <textarea
+        id="content"
+        placeholder="어떤 장소인지 적어주세요."
+      ></textarea>
+
+
+      <!-- 사진 -->
+
+      <div style="margin-top: 12px;">
+
+        <label for="imageFile">
+          사진 첨부
+        </label>
+
+        
+<button
+  type="button"
+  id="analyzeImageBtn"
+  class="btn"
+  disabled
+>
+  🌿 사진 분석하기
+</button>
+
+<div
+  id="imageAnalysisResult"
+  class="card"
+  hidden
+  aria-live="polite"
+>
+  <h3>🍃 사진 분석 결과</h3>
+
+  <p id="imageAnalysisText"></p>
+
+  <button
+    type="button"
+    id="useAnalysisBtn"
+  >
+    분석 결과를 게시글에 넣기
+  </button>
+</div>
+
+        <input
+          id="imageFile"
+          type="file"
+          accept="image/*"
+        >
+
+        <img
+          id="imagePreview"
+          alt="선택한 사진 미리보기"
+        >
+
+      </div>
+
+
+      <!-- 지도 -->
+
+      <div style="margin-top: 18px;">
+
+        <h3>발견 위치</h3>
+
+        <p class="map-help">
+          지도를 클릭하면 위치가 선택됩니다.
+        </p>
+
+        <button
+          type="button"
+          onclick="useMyLocation()"
+        >
+          현재 위치 사용
+        </button>
+
+        <div id="postMap"></div>
+
+        <div id="selectedLocation">
+          아직 위치를 선택하지 않았습니다.
+        </div>
+
+      </div>
+
+
+      <!-- 버튼 -->
+
+      <div class="row" style="margin-top: 14px;">
+
+        <button type="button" onclick="addPost()">
+          등록
+        </button>
+
+        <button
+          id="aiBtn"
+          onclick="polish()"
+        >
+          AI에게 다듬어달라기
+        </button>
+
+      </div>
+
+
+      <div id="aiBox"></div>
+
+    </section>
+
+
+    <!-- ================================================= -->
+    <!-- AI 검색 -->
+    <!-- ================================================= -->
+
+    <section class="card">
+
+      <h2>AI 검색</h2>
+
+      <p>
+        게시판 내용을 자연어로 검색할 수 있습니다.
+      </p>
+
+      <div class="row">
+
+        <input
+          id="aiSearchInput"
+          type="text"
+          placeholder="예: 나무 근처에 있다는 제보 찾아줘"
+          autocomplete="off"
+        >
+
+        <button
+          id="aiSearchBtn"
+          onclick="aiSearchPosts()"
+        >
+          AI 검색
+        </button>
+
+      </div>
+
+      <div id="aiSearchResult"></div>
+
+    </section>
+
+
+    <!-- ================================================= -->
+    <!-- 게시글 목록 -->
+    <!-- ================================================= -->
+
+    <ul id="list"></ul>
+
+  </main>
+
+
+  <!-- Supabase -->
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+  ></script>
+
+
+  <!-- Leaflet -->
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
+
+
+  <!-- 공통 JS -->
+
+  <script src="/static/js/common.js"></script>
+
+
+  <!-- 게시판 JS -->
+
+  <script src="/static/js/board.js"></script>
+
+</body>
+
+</html>
