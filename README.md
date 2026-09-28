@@ -44,16 +44,6 @@ Settings → Environment Variables 에 넣고 **Redeploy** 까지 해야 반영�
 Supabase 키를 안 숨기는 건 실수가 아닙니다. 공개를 전제로 만들어진 키이고,
 권한은 DB의 RLS 정책이 따로 막습니다.
 
-## Google 로그인 설정
-
-로그인 화면에는 Google OAuth 버튼이 추가되어 있습니다. 실제 사용 전 아래 설정이 필요합니다.
-
-1. Google Cloud Console에서 OAuth 클라이언트 ID를 만들고, 승인된 리디렉션 URI에 다음 주소를 등록합니다.
-  `https://nykkmxisbbefpbnliqbf.supabase.co/auth/v1/callback`
-2. Supabase 대시보드에서 **Authentication → Sign In / Providers → Google**을 열고 Google Client ID와 Client Secret을 입력한 뒤 활성화합니다.
-3. Supabase **Authentication → URL Configuration → Redirect URLs**에 로컬 및 배포 주소를 등록합니다. 예: `http://localhost:3000/index.html`, `https://<your-vercel-domain>/index.html`.
-4. `vercel dev` 또는 배포 사이트에서 테스트합니다. OAuth 공급자 설정은 코드에 비밀키를 넣지 않고 Supabase 대시보드에서 관리합니다.
-
 ## 규칙 1 — 주소는 항상 `/` 로 시작
 
 ```html

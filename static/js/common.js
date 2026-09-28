@@ -93,37 +93,6 @@ async function signIn() {
   }
 }
 
-async function signInWithGoogle() {
-  const message = document.getElementById("loginMessage");
-  const button = document.querySelector(
-    'button[onclick="signInWithGoogle()"]'
-  );
-
-  if (button) button.disabled = true;
-  if (message) message.textContent = "Google 로그인 페이지로 이동합니다...";
-
-  try {
-    const { error } = await db.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin + "/index.html"
-      }
-    });
-
-    if (error) throw error;
-  } catch (error) {
-    console.error("Google 로그인 실패:", error);
-
-    if (message) {
-      message.textContent =
-        "Google 로그인을 시작하지 못했습니다. " +
-        (error.message || "Supabase 제공자 설정을 확인해 주세요.");
-    }
-
-    if (button) button.disabled = false;
-  }
-}
-
 async function signOut() {
   await db.auth.signOut();
   location.href = "/index.html";
