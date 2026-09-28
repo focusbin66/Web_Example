@@ -156,11 +156,39 @@ async function askAI(prompt) {
     body: JSON.stringify({ prompt: prompt }),
   });
 
-  const data = await res.json();
+  const responseText = await res.text();
+  let data = null;
+
+  try {
+    data = responseText ? JSON.parse(responseText) : null;
+  } catch (error) {
+    data = null;
+  }
 
   if (!res.ok) {
-    console.error("AI 호출 실패:", res.status, data.error);
-    throw new Error(data.error);
+    console.error("AI 호출 실패:", res.status, data);
+
+    if (res.status === 404) {
+      throw new Error(
+        "Vercel에서 /api/ai 서버 함수를 찾지 못했습니다. " +
+        "Vercel 프로젝트의 Root Directory와 최신 배포를 확인해 주세요."
+      );
+    }
+
+    if (res.status === 405) {
+      throw new Error("AI API가 POST 요청을 허용하지 않습니다.");
+    }
+
+    throw new Error(
+      data?.error || "AI 요청에 실패했습니다. (HTTP " + res.status + ")"
+    );
   }
+
+  if (!data || typeof data.text !== "string") {
+    throw new Error(
+      "AI API 응답이 올바르지 않습니다. Vercel Functions 로그를 확인해 주세요."
+    );
+  }
+
   return data.text;
 }
