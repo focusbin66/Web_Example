@@ -130,3 +130,109 @@ li .when {
   font-size: 12px;
   color: var(--gray);
 }
+
+/* ---------- 홈 지도 마커 ---------- */
+
+.korok-marker {
+  background: transparent;
+  border: none;
+}
+
+.pixel-korok {
+  position: relative;
+  width: 48px;
+  height: 58px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 0 rgba(40, 65, 35, 0.25));
+}
+
+.pixel-korok__leaf {
+  position: absolute;
+  left: 17px;
+  top: 0;
+  width: 14px;
+  height: 12px;
+  background: #82b95b;
+  box-shadow:
+    -5px 4px #82b95b,
+     5px 4px #82b95b,
+     0 8px #4f8c43,
+     0 12px #4f8c43;
+}
+
+.pixel-korok__mask {
+  position: absolute;
+  left: 5px;
+  top: 12px;
+  width: 38px;
+  height: 30px;
+  background: #b5d783;
+  border: 3px solid #466b3a;
+  box-sizing: border-box;
+  clip-path: polygon(
+    25% 0,
+    75% 0,
+    75% 12%,
+    100% 12%,
+    100% 75%,
+    75% 75%,
+    75% 100%,
+    25% 100%,
+    25% 75%,
+    0 75%,
+    0 12%,
+    25% 12%
+  );
+}
+
+.pixel-korok__eye {
+  position: absolute;
+  top: 10px;
+  width: 5px;
+  height: 7px;
+  background: #263d2b;
+}
+
+.pixel-korok__eye--left { left: 7px; }
+.pixel-korok__eye--right { right: 7px; }
+
+.pixel-korok__body {
+  position: absolute;
+  left: 15px;
+  top: 42px;
+  width: 18px;
+  height: 10px;
+  background: #8caa59;
+  box-shadow:
+    -4px 4px #8caa59,
+     4px 4px #8caa59;
+}
+
+.pixel-korok__feet {
+  position: absolute;
+  left: 11px;
+  top: 52px;
+  width: 10px;
+  height: 5px;
+  background: #5d7e43;
+  box-shadow: 16px 0 #5d7e43;
+}
+
+/* 🍃 이파리 지도 마커 */
+
+.leaf-marker-container {
+  background: transparent;
+  border: none;
+}
+
+.leaf-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 28px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25));
+  cursor: pointer;
+}

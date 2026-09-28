@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     const isImageRequest = Boolean(image);
 
     const model = isImageRequest
-      ? "meta-llama/llama-4-scout-17b-16e-instruct"
+      ? "qwen/qwen3.6-27b"
       : "openai/gpt-oss-20b";
 
     const userContent = isImageRequest

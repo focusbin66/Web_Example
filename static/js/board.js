@@ -1,4 +1,8 @@
 
+// AI 사진 분석 결과 임시 보관
+let currentImageAnalysis = "";
+
+
 // 게시판 페이지 전용 코드
 // 사진 미리보기 + AI 사진 분석 기능 통합
 
@@ -12,6 +16,23 @@ let selectedMarker = null;
 let selectedLatitude = null;
 let selectedLongitude = null;
 
+// =========================================================
+// 🍃 이파리 지도 마커
+// =========================================================
+
+function createLeafMarker(latitude, longitude) {
+  return L.marker(
+    [latitude, longitude],
+    {
+      icon: L.divIcon({
+        className: "leaf-marker-container",
+        html: '<span class="leaf-marker">🍃</span>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      })
+    }
+  );
+}
 
 // =========================================================
 // 로그인 완료 후 실행
@@ -80,10 +101,10 @@ function setSelectedLocation(latitude, longitude) {
     postMap.removeLayer(selectedMarker);
   }
 
-  selectedMarker = L.marker([
-    latitude,
-    longitude
-  ]).addTo(postMap);
+  selectedMarker = createLeafMarker(
+  latitude,
+  longitude
+).addTo(postMap);
 
   selectedMarker
     .bindPopup("제보 위치")
@@ -449,7 +470,8 @@ async function addPost() {
         user_id: currentUser.id,
         image_url: imageUrl,
         latitude: selectedLatitude,
-        longitude: selectedLongitude
+        longitude: selectedLongitude,
+        analysis: currentImageAnalysis || null
       });
 
     if (error) {
@@ -478,6 +500,8 @@ async function addPost() {
       preview.src = "";
       preview.style.display = "none";
     }
+
+    currentImageAnalysis = "";
 
     selectedLatitude = null;
     selectedLongitude = null;
@@ -703,6 +727,7 @@ function setupImageAnalysis() {
   imageInput.addEventListener("change", function () {
     const file = imageInput.files[0];
 
+    currentImageAnalysis = "";
     analysisText = "";
     resultBox.textContent = "";
 
@@ -770,6 +795,8 @@ function setupImageAnalysis() {
         data.content ||
         "";
 
+      currentImageAnalysis = analysisText;
+
       if (typeof analysisText !== "string" || !analysisText.trim()) {
         throw new Error("AI 분석 결과가 비어 있습니다.");
       }
@@ -830,4 +857,197 @@ if (document.readyState === "loading") {
   );
 } else {
   setupImageAnalysis();
+}
+
+// ======================================
+// 게시글 목록 + 팝업 연결
+// ======================================
+
+const postModal = document.getElementById("postModal");
+
+function openPostModal(post) {
+  if (!postModal) return;
+
+  const image = document.getElementById("modalImage");
+  const content = document.getElementById("modalContent");
+  const meta = document.getElementById("modalMeta");
+  const location = document.getElementById("modalLocation");
+
+  content.textContent = post.content || "내용이 없습니다.";
+
+  meta.textContent =
+    `${post.nickname || "익명"} · ${
+      post.created_at
+        ? new Date(post.created_at).toLocaleDateString("ko-KR")
+        : ""
+    }`;
+
+  // 사진
+  if (post.image_url) {
+    image.src = post.image_url;
+    image.style.display = "block";
+  } else {
+    image.removeAttribute("src");
+    image.style.display = "none";
+  }
+
+  // 위치
+  location.replaceChildren();
+
+  if (post.latitude != null && post.longitude != null) {
+    const title = document.createElement("p");
+    title.textContent = "📍 발견 위치";
+
+    const link = document.createElement("a");
+    link.href =
+      `https://www.openstreetmap.org/?mlat=${post.latitude}` +
+      `&mlon=${post.longitude}` +
+      `#map=17/${post.latitude}/${post.longitude}`;
+
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "지도에서 위치 보기";
+
+    location.append(title, link);
+  } else {
+    location.textContent = "위치 정보가 없습니다.";
+  }
+
+  // AI 분석 결과
+  const analysisBox =
+    document.getElementById("modalAnalysis");
+
+  const analysisText =
+    document.getElementById("modalAnalysisText");
+
+  if (post.analysis) {
+    analysisText.textContent = post.analysis;
+    analysisBox.hidden = false;
+  } else {
+    analysisText.textContent = "";
+    analysisBox.hidden = true;
+  }
+
+  postModal.classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+
+// ======================================
+// 팝업 닫기
+// ======================================
+
+function closePostModal() {
+  if (!postModal) return;
+
+  postModal.classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+document
+  .getElementById("closeModal")
+  ?.addEventListener("click", closePostModal);
+
+postModal?.addEventListener("click", function (event) {
+  if (event.target === postModal) {
+    closePostModal();
+  }
+});
+
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape") {
+    closePostModal();
+  }
+});
+
+
+// ======================================
+// 게시글 목록 불러오기
+// ======================================
+
+async function loadPosts() {
+  const list = document.getElementById("list");
+
+  if (!list) return;
+
+  list.innerHTML = "<li>게시글을 불러오는 중...</li>";
+
+  try {
+    const { data, error } = await db
+      .from("posts")
+      .select("*")
+      .order("created_at", {
+        ascending: false
+      });
+
+    if (error) throw error;
+
+    list.replaceChildren();
+
+    if (!data || data.length === 0) {
+      list.innerHTML =
+        "<li>아직 등록된 제보가 없습니다.</li>";
+      return;
+    }
+
+    data.forEach(function (post) {
+      const item = document.createElement("li");
+      item.className = "post-card";
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+
+      const title = document.createElement("h3");
+      title.textContent =
+        post.nickname || "익명";
+
+      const text = document.createElement("p");
+      text.textContent =
+        post.content || "내용이 없습니다.";
+
+      const date = document.createElement("p");
+      date.className = "post-meta";
+      date.textContent = post.created_at
+        ? new Date(post.created_at)
+            .toLocaleDateString("ko-KR")
+        : "";
+
+      item.append(title, text);
+
+      // 목록에서는 작은 사진만 표시
+      if (post.image_url) {
+        const image = document.createElement("img");
+        image.src = post.image_url;
+        image.alt = "제보 사진";
+        image.className = "post-image";
+        image.loading = "lazy";
+        item.appendChild(image);
+      }
+
+      item.appendChild(date);
+
+      // 클릭하면 팝업 열기
+      item.addEventListener("click", function () {
+        openPostModal(post);
+      });
+
+      // 키보드 접근성
+      item.addEventListener("keydown", function (event) {
+        if (
+          event.key === "Enter" ||
+          event.key === " "
+        ) {
+          event.preventDefault();
+          openPostModal(post);
+        }
+      });
+
+      list.appendChild(item);
+    });
+
+  } catch (error) {
+    console.error("게시글 불러오기 실패:", error);
+
+    list.innerHTML =
+      "<li>게시글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</li>";
+  }
 }

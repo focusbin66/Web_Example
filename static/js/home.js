@@ -2,6 +2,20 @@
 let homeMap = null;
 let homeMapMarkers = null;
 
+function createLeafMarker(latitude, longitude) {
+  return L.marker(
+    [latitude, longitude],
+    {
+      icon: L.divIcon({
+        className: "leaf-marker-container",
+        html: '<span class="leaf-marker">🍃</span>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      })
+    }
+  );
+}
+
 // HTML 문자 처리
 function escapeHTML(value) {
   return String(value ?? "")
@@ -142,11 +156,7 @@ async function loadHomePosts() {
       return;
     }
 
-    // 픽셀 코로그 마커 적용
-    const marker = L.marker([lat, lng], {
-      icon: createKorokIcon(),
-      alt: "게시글 위치"
-    });
+    const marker = createLeafMarker(lat, lng);
 
     const imageURL =
       typeof post.image_url === "string" &&
