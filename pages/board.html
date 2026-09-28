@@ -6,6 +6,10 @@
   <title>코로그 게시판</title>
 
   <link rel="stylesheet" href="/static/css/style.css">
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
 
   <style>
     #list {
@@ -108,6 +112,39 @@
       overflow-wrap: anywhere;
     }
 
+    #postMap {
+      height: 280px;
+      margin: 12px 0;
+      border-radius: 10px;
+      z-index: 0;
+    }
+
+    #imagePreview {
+      display: none;
+      width: 100%;
+      max-height: 280px;
+      object-fit: contain;
+      margin: 8px 0 12px;
+      border-radius: 10px;
+    }
+
+    #imageAnalysisResult,
+    #aiBox {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .write-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 16px;
+    }
+
+    .write-actions button:last-child {
+      margin-left: auto;
+    }
+
     @media (prefers-color-scheme: dark) {
       .modal-content {
         background: #202820;
@@ -127,6 +164,58 @@
 
   <main>
     <h1>🌿 코로그 제보 게시판</h1>
+
+    <!-- 게시글 작성 -->
+    <section class="card" aria-labelledby="writeHeading">
+      <h2 id="writeHeading">새 제보 작성</h2>
+
+      <label for="content">발견한 내용을 적어 주세요</label>
+      <textarea
+        id="content"
+        rows="5"
+        maxlength="3000"
+        placeholder="어디에서 무엇을 발견했는지 적어 주세요."
+        required
+      ></textarea>
+
+      <div class="write-actions">
+        <button id="aiBtn" type="button" onclick="polish()">
+          AI 문장 다듬기
+        </button>
+      </div>
+      <div id="aiBox" aria-live="polite"></div>
+
+      <label for="imageFile">사진 첨부 (선택, 10MB 이하)</label>
+      <input
+        id="imageFile"
+        type="file"
+        accept="image/*"
+      >
+      <img id="imagePreview" alt="첨부 사진 미리보기">
+
+      <div class="write-actions">
+        <button id="analyzeImageBtn" type="button" disabled>
+          사진 AI 분석
+        </button>
+        <button id="useImageAnalysisBtn" type="button" disabled>
+          분석 결과를 내용에 넣기
+        </button>
+      </div>
+      <div id="imageAnalysisResult" aria-live="polite"></div>
+
+      <h3>발견 위치 (선택)</h3>
+      <button type="button" onclick="useMyLocation()">
+        현재 위치 사용
+      </button>
+      <p id="selectedLocation">아직 위치를 선택하지 않았습니다.</p>
+      <div id="postMap" aria-label="지도에서 발견 위치 선택"></div>
+
+      <div class="write-actions">
+        <button type="button" onclick="addPost()">
+          게시글 등록
+        </button>
+      </div>
+    </section>
 
     <!-- AI 검색 -->
     <section class="card">
@@ -190,6 +279,9 @@
 
   <!-- 공통 JS -->
   <script src="/static/js/common.js"></script>
+
+  <!-- 지도 -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- 게시판 JS -->
   <script src="/static/js/board.js"></script>
