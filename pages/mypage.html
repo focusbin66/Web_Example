@@ -11,15 +11,29 @@
   <header id="nav"></header>
 
   <main>
-    <h1>내 정보</h1>
-
-    <section class="card">
-      <p>이메일: <strong id="myEmail"></strong></p>
-      <p>내가 쓴 글: <strong id="myCount">-</strong>개</p>
+    <section class="page-hero">
+      <span class="page-hero__symbol" aria-hidden="true">🍃</span>
+      <h1>나의 숲 기록</h1>
+      <p>내 계정 정보와 숲에 남긴 이야기를 확인해 보세요.</p>
     </section>
 
-    <h2>내가 쓴 글</h2>
-    <ul id="myList"></ul>
+    <section class="card forest-card" aria-label="내 활동 요약">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span>로그인 계정</span>
+          <strong id="myEmail"></strong>
+        </div>
+        <div class="stat-card">
+          <span>내가 남긴 이야기</span>
+          <strong class="stat-value"><span id="myCount">-</span>개</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="card forest-card">
+      <h2>🌱 내가 쓴 글</h2>
+      <ul id="myList"></ul>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
