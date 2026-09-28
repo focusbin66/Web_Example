@@ -29,8 +29,8 @@ module.exports = async function handler(req, res) {
     const isImageRequest = Boolean(image);
 
     const model = isImageRequest
-      ? "qwen/qwen3.6-27b"
-      : "openai/gpt-oss-20b";
+  ? "qwen/qwen3.8-27b"
+  : "openai/gpt-oss-20b";
 
     const userContent = isImageRequest
       ? [
