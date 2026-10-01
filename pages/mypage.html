@@ -11,6 +11,10 @@
     .mypage-post-image { display: block; width: 100%; max-height: 300px; object-fit: cover; border-radius: 14px; margin: 12px 0; cursor: pointer; }
     .mypage-post-content { white-space: pre-wrap; overflow-wrap: anywhere; }
     .mypage-post-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    #savedList { display: grid; gap: 14px; list-style: none; padding: 0; }
+    .saved-post-card { padding: 16px; border: 1px solid #d5e1c4; border-radius: 14px; cursor: pointer; }
+    .saved-post-card:hover { background: rgba(232, 240, 217, 0.5); }
+    .saved-post-card h3 { margin-top: 0; }
     .korok-probability { display: inline-block; padding: 8px 12px; border-radius: 999px; background: #e7f0d5; color: #315d3b; }
   </style>
 </head>
@@ -36,6 +40,11 @@
           <strong class="stat-value"><span id="myCount">-</span>개</strong>
         </div>
       </div>
+    </section>
+
+    <section class="card forest-card">
+      <h2>♡ 내가 저장한 글</h2>
+      <ul id="savedList" aria-live="polite"><li>저장한 글을 불러오는 중...</li></ul>
     </section>
 
     <section class="card forest-card">

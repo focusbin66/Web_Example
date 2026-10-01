@@ -187,9 +187,15 @@
     }
 
     .map-popup {
-      max-width: 220px;
+      width: min(205px, calc(100vw - 120px));
+      max-width: none;
+      max-height: calc(100vh - 120px);
+      max-height: calc(100dvh - 120px);
       color: #314b34;
       overflow-wrap: anywhere;
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding-right: 4px;
     }
 
     .map-popup strong {
@@ -204,15 +210,44 @@
     .map-popup img {
       display: block;
       width: 100%;
-      max-height: 150px;
-      object-fit: cover;
+      max-height: 110px;
+      object-fit: contain;
       border-radius: 10px;
       margin-top: 8px;
     }
 
+    .map-visit {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #f1f8e9;
+      color: #314b34;
+    }
+
+    .map-visit__count { margin: 0 0 8px; font-weight: 700; }
+    .map-visit__control { display: flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; }
+    .map-visit__control input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .map-visit__track { position: relative; display: inline-block; flex: 0 0 46px; width: 46px; height: 26px; border-radius: 999px; background: #aab5a0; transition: background 0.2s; }
+    .map-visit__track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #0003; transition: transform 0.2s; }
+    .map-visit__control input:checked + .map-visit__track { background: #4e8053; }
+    .map-visit__control input:checked + .map-visit__track::after { transform: translateX(20px); }
+    .map-visit__control input:focus-visible + .map-visit__track { outline: 3px solid #2478e5; outline-offset: 2px; }
+    .map-visit__control input:disabled + .map-visit__track { opacity: 0.6; cursor: wait; }
+    .map-visit__message { margin: 6px 0 0; font-size: 12px; }
+
     .map-popup a {
       color: #47784b;
       font-weight: bold;
+    }
+
+    .map-popup .map-popup__board-link {
+      display: inline-block;
+      margin: 6px 0 4px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: #4e8053;
+      color: #fff;
+      text-decoration: none;
     }
 
     /* 오리지널 잎사귀 마커 */

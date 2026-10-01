@@ -108,13 +108,16 @@
     }
 
     .visit-status h3 { margin: 0 0 8px; }
-    .visit-status__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .visit-status__actions button.is-selected {
-      background: #315d3b;
-      color: #fff;
-      border-color: #315d3b;
-    }
-    .visit-status__actions button:disabled { opacity: 0.6; cursor: wait; }
+    .visit-status__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .visit-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 700; }
+    .visit-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .visit-switch__track { position: relative; display: inline-block; width: 54px; height: 30px; border-radius: 999px; background: #aab5a0; transition: background 0.2s; }
+    .visit-switch__track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #0003; transition: transform 0.2s; }
+    .visit-switch input:checked + .visit-switch__track { background: #4e8053; }
+    .visit-switch input:checked + .visit-switch__track::after { transform: translateX(24px); }
+    .visit-switch input:focus-visible + .visit-switch__track { outline: 3px solid #2478e5; outline-offset: 3px; }
+    .visit-status__actions button:disabled,
+    .visit-switch input:disabled + .visit-switch__track { opacity: 0.6; cursor: wait; }
     #visitStatusMessage { margin-bottom: 0; }
 
     #modalAnalysis {
@@ -294,7 +297,8 @@
       </div>
       <div id="imageAnalysisResult" aria-live="polite"></div>
 
-      <h3>발견 위치 (선택)</h3>
+      <h3>발견 위치 (필수)</h3>
+      <p>게시글을 등록하려면 지도에서 위치를 선택하거나 현재 위치를 지정해야 합니다.</p>
       <div class="write-actions">
         <button type="button" onclick="useMyLocation()">
           현재 위치 사용
@@ -385,8 +389,12 @@
         <h3 id="visitStatusHeading">🧭 방문 상태</h3>
         <p id="visitCount" aria-live="polite">방문 기록을 불러오는 중...</p>
         <div class="visit-status__actions">
-          <button id="markPlannedBtn" type="button" data-status="planned">가기 전</button>
-          <button id="markVisitedBtn" type="button" data-status="visited">다녀왔어요</button>
+          <span>방문 전</span>
+          <label class="visit-switch" for="visitedSwitch">
+            <input id="visitedSwitch" type="checkbox" role="switch" aria-label="방문 전 또는 방문 후 상태" disabled>
+            <span class="visit-switch__track" aria-hidden="true"></span>
+            <span>방문 후</span>
+          </label>
           <button id="clearVisitStatusBtn" type="button">상태 선택 취소</button>
         </div>
         <p id="visitStatusMessage" class="post-meta" aria-live="polite"></p>

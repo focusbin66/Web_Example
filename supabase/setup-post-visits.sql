@@ -52,3 +52,4 @@ $function$;
 
 revoke all on function public.get_post_visit_summary(bigint) from public, anon;
 grant execute on function public.get_post_visit_summary(bigint) to authenticated;
+grant execute on function public.get_post_visit_summary(bigint) to anon;

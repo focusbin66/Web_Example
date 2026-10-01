@@ -396,3 +396,24 @@ li .when {
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25));
   cursor: pointer;
 }
+
+.leaf-marker--visited {
+  position: relative;
+}
+
+.leaf-marker--visited::after {
+  content: "✓";
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #2478e5;
+  color: #fff;
+  font: 700 11px/1 Arial, sans-serif;
+  filter: none;
+}

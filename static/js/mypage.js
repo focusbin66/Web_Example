@@ -23,6 +23,90 @@ async function loadMyPage() {
   myPosts = data || [];
   document.getElementById("myCount").textContent = myPosts.length;
   renderMyMap();
+  await loadSavedPosts();
+}
+
+async function loadSavedPosts() {
+  const list = document.getElementById("savedList");
+  const { data: savedRows, error } = await db
+    .from("saved_posts")
+    .select("post_id")
+    .eq("user_id", currentUser.id);
+
+  list.replaceChildren();
+  if (error) {
+    console.error("저장한 글 불러오기 실패:", error);
+    list.textContent = "저장한 글을 불러오지 못했습니다. Supabase 저장 기능 설정을 확인해 주세요.";
+    return;
+  }
+
+  const postIds = (savedRows || []).map((row) => row.post_id);
+  if (!postIds.length) {
+    list.textContent = "아직 저장한 글이 없습니다.";
+    return;
+  }
+
+  const { data: savedPosts, error: postsError } = await db
+    .from("posts")
+    .select("*")
+    .in("id", postIds);
+  if (postsError) {
+    console.error("저장한 게시글 내용 불러오기 실패:", postsError);
+    list.textContent = "저장한 게시글 내용을 불러오지 못했습니다.";
+    return;
+  }
+
+  const postsById = new Map((savedPosts || []).map((post) => [String(post.id), post]));
+  postIds.forEach((postId) => {
+    const post = postsById.get(String(postId));
+    if (post) list.appendChild(createSavedPostItem(post));
+  });
+}
+
+function createSavedPostItem(post) {
+  const item = document.createElement("li");
+  item.className = "saved-post-card";
+  item.addEventListener("click", (event) => {
+    if (!event.target.closest("button")) openPostDetails(post);
+  });
+
+  const title = document.createElement("h3");
+  title.textContent = post.nickname || "익명 여행자";
+  item.appendChild(title);
+  if (post.image_url) {
+    const image = document.createElement("img");
+    image.className = "mypage-post-image";
+    image.src = post.image_url;
+    image.alt = "저장한 게시글 사진";
+    image.loading = "lazy";
+    image.addEventListener("click", () => openPostDetails(post));
+    item.appendChild(image);
+  }
+  const content = document.createElement("p");
+  content.className = "mypage-post-content";
+  content.textContent = post.content || "사진 제보";
+  item.appendChild(content);
+
+  const unsave = document.createElement("button");
+  unsave.type = "button";
+  unsave.textContent = "저장 해제";
+  unsave.addEventListener("click", () => removeSavedPost(post.id, item));
+  item.appendChild(unsave);
+  return item;
+}
+
+async function removeSavedPost(postId, item) {
+  const { error } = await db.from("saved_posts")
+    .delete()
+    .eq("user_id", currentUser.id)
+    .eq("post_id", postId);
+  if (error) {
+    alert(`저장 해제에 실패했습니다. ${error.message}`);
+    return;
+  }
+  item.remove();
+  const list = document.getElementById("savedList");
+  if (!list.querySelector("li")) list.textContent = "아직 저장한 글이 없습니다.";
 }
 
 async function deleteMyPost(post, item = null) {

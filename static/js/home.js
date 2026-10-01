@@ -2,20 +2,25 @@
 let homeMap = null;
 let homeMapMarkers = null;
 let homePosts = [];
+let visitedPostIds = new Set();
 let myLocationMarker = null;
 let myLocationAccuracy = null;
 let hasCenteredOnMyLocation = false;
 
-function createLeafMarker(latitude, longitude) {
+function createHomeMarkerIcon(visited) {
+  return L.divIcon({
+    className: "leaf-marker-container",
+    html: `<span class="leaf-marker${visited ? " leaf-marker--visited" : ""}">🍃</span>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18]
+  });
+}
+
+function createLeafMarker(latitude, longitude, visited = false) {
   return L.marker(
     [latitude, longitude],
     {
-      icon: L.divIcon({
-        className: "leaf-marker-container",
-        html: '<span class="leaf-marker">🍃</span>',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
-      })
+      icon: createHomeMarkerIcon(visited)
     }
   );
 }
@@ -156,7 +161,7 @@ function renderHomePosts() {
 
     const probability = getKorokProbability(post.analysis);
     if (!matchesProbabilityFilter(probability, filter)) return;
-    const marker = createLeafMarker(lat, lng);
+    const marker = createLeafMarker(lat, lng, visitedPostIds.has(String(post.id)));
 
     const summary = getKorokSummary(post);
     const probabilityText = probability == null
@@ -168,10 +173,22 @@ function renderHomePosts() {
         <img src="${escapeHTML(imageURL)}" alt="게시글 사진" loading="lazy">
         <strong>🍃 ${escapeHTML(probabilityText)}</strong>
         <p class="map-summary">🍃 ${escapeHTML(summary)}</p>
+        <div class="map-visit">
+          <p class="map-visit__count" aria-live="polite">방문 인원 확인 중...</p>
+          <label class="map-visit__control">
+            <span>방문 전</span>
+            <input class="map-visited-switch" type="checkbox" role="switch" aria-label="방문 전 또는 방문 후 상태" disabled>
+            <span class="map-visit__track" aria-hidden="true"></span>
+            <span>방문 후</span>
+          </label>
+          <p class="map-visit__message" aria-live="polite"></p>
+        </div>
+        <a class="map-popup__board-link" href="/pages/board.html?post=${encodeURIComponent(post.id)}">게시판에서 보기</a>
       </div>
     `;
 
     marker.bindPopup(popupHTML);
+    marker.on("popupopen", (event) => setupHomeVisitSwitch(event.popup, post, marker));
     marker.addTo(homeMapMarkers);
 
     bounds.push([lat, lng]);
@@ -190,6 +207,77 @@ function renderHomePosts() {
   } else {
     setMapStatus("선택한 확률 조건에 맞는 위치 게시글이 없습니다.");
   }
+}
+
+async function setupHomeVisitSwitch(popup, post, marker) {
+  const popupElement = popup.getElement();
+  if (!popupElement) return;
+  L.DomEvent.disableClickPropagation(popupElement);
+
+  const count = popupElement.querySelector(".map-visit__count");
+  const toggle = popupElement.querySelector(".map-visited-switch");
+  const message = popupElement.querySelector(".map-visit__message");
+  if (!count || !toggle || !message) return;
+
+  try {
+    const { data, error } = await db.rpc("get_post_visit_summary", { p_post_id: post.id });
+    if (error) throw error;
+    const summary = data?.[0];
+    count.textContent = `다녀온 사람 ${Number(summary?.visited_count) || 0}명`;
+    toggle.checked = summary?.user_status === "visited";
+    updateHomePostMarker(post.id, marker, toggle.checked);
+
+    if (!currentUser) {
+      toggle.disabled = true;
+      message.textContent = "방문 상태를 저장하려면 로그인해 주세요.";
+      return;
+    }
+
+    toggle.disabled = false;
+    message.textContent = "";
+
+    toggle.onchange = async () => {
+      const previousStatus = summary?.user_status || null;
+      const nextStatus = toggle.checked ? "visited" : "planned";
+      toggle.disabled = true;
+      message.textContent = "방문 상태를 저장하고 있어요...";
+      try {
+        const result = await db.from("post_visit_status").upsert({
+          post_id: post.id,
+          user_id: currentUser.id,
+          status: nextStatus,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "post_id,user_id" });
+        if (result.error) throw result.error;
+
+        const refreshed = await db.rpc("get_post_visit_summary", { p_post_id: post.id });
+        if (refreshed.error) throw refreshed.error;
+        const updatedSummary = refreshed.data?.[0];
+        count.textContent = `다녀온 사람 ${Number(updatedSummary?.visited_count) || 0}명`;
+        toggle.checked = updatedSummary?.user_status === "visited";
+        updateHomePostMarker(post.id, marker, toggle.checked);
+        message.textContent = "";
+      } catch (error) {
+        toggle.checked = previousStatus === "visited";
+        message.textContent = "저장에 실패했습니다. 방문 상태 SQL 설정을 확인해 주세요.";
+        console.error("홈 지도 방문 상태 저장 실패:", error);
+      } finally {
+        toggle.disabled = false;
+      }
+    };
+  } catch (error) {
+    count.textContent = "방문 인원을 불러오지 못했습니다.";
+    message.textContent = "Supabase에서 방문 상태 설정 SQL을 실행해 주세요.";
+    toggle.disabled = true;
+    console.error("홈 지도 방문 상태 불러오기 실패:", error);
+  }
+}
+
+function updateHomePostMarker(postId, marker, visited) {
+  const id = String(postId);
+  if (visited) visitedPostIds.add(id);
+  else visitedPostIds.delete(id);
+  marker.setIcon(createHomeMarkerIcon(visited));
 }
 
 function showMyLocation() {

@@ -152,6 +152,7 @@ async function loadPosts() {
   renderPosts(currentUserPosts);
   renderPostMarkers(currentUserPosts);
   handleEditQuery();
+  handlePostQuery();
 }
 
 function renderPosts(posts) {
@@ -302,16 +303,16 @@ function openPostModal(post) {
 }
 
 function setupVisitStatusControls() {
-  const plannedButton = document.getElementById("markPlannedBtn");
-  const visitedButton = document.getElementById("markVisitedBtn");
+  const visitedSwitch = document.getElementById("visitedSwitch");
   const clearButton = document.getElementById("clearVisitStatusBtn");
-  if (plannedButton) plannedButton.onclick = () => savePostVisitStatus("planned");
-  if (visitedButton) visitedButton.onclick = () => savePostVisitStatus("visited");
+  if (visitedSwitch) {
+    visitedSwitch.onchange = () => savePostVisitStatus(visitedSwitch.checked ? "visited" : "planned");
+  }
   if (clearButton) clearButton.onclick = () => savePostVisitStatus(null);
 }
 
 function setVisitStatusButtonsDisabled(disabled) {
-  ["markPlannedBtn", "markVisitedBtn", "clearVisitStatusBtn"].forEach((id) => {
+  ["visitedSwitch", "clearVisitStatusBtn"].forEach((id) => {
     const button = document.getElementById(id);
     if (button) button.disabled = disabled;
   });
@@ -319,22 +320,9 @@ function setVisitStatusButtonsDisabled(disabled) {
 
 function renderVisitStatus() {
   const count = document.getElementById("visitCount");
-  const message = document.getElementById("visitStatusMessage");
   if (count) count.textContent = `다녀온 사람 ${currentVisitedCount}명`;
-  if (message) {
-    message.textContent = currentVisitStatus === "planned"
-      ? "내 상태: 가기 전"
-      : currentVisitStatus === "visited"
-        ? "내 상태: 다녀왔어요"
-        : "아직 방문 상태를 선택하지 않았어요.";
-  }
-  ["markPlannedBtn", "markVisitedBtn"].forEach((id) => {
-    const button = document.getElementById(id);
-    if (!button) return;
-    const selected = button.dataset.status === currentVisitStatus;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
+  const visitedSwitch = document.getElementById("visitedSwitch");
+  if (visitedSwitch) visitedSwitch.checked = currentVisitStatus === "visited";
 }
 
 async function loadPostVisitStatus(post) {
@@ -400,7 +388,7 @@ async function savePostVisitStatus(status) {
     if (!error && summary) currentVisitedCount = Number(summary.visited_count) || 0;
 
     renderVisitStatus();
-    if (message) message.textContent = "방문 상태를 저장했어요.";
+    if (message) message.textContent = "";
     setVisitStatusButtonsDisabled(false);
   } catch (error) {
     if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
@@ -654,6 +642,12 @@ async function addPost() {
     alert("게시글 내용을 입력해 주세요.");
     return;
   }
+  if (selectedLatitude == null || selectedLongitude == null ||
+      !Number.isFinite(Number(selectedLatitude)) || !Number.isFinite(Number(selectedLongitude))) {
+    alert("게시글을 등록하려면 지도에서 위치를 선택하거나 현재 위치를 사용해 주세요.");
+    document.getElementById("selectedLocation")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
   if (!validateImage(file)) return;
 
   submitButton.disabled = true;
@@ -853,6 +847,15 @@ function handleEditQuery() {
   const post = currentUserPosts.find((item) => String(item.id) === editId);
   if (post && isOwnPost(post)) startEditing(post);
   else alert("수정할 게시글을 찾을 수 없거나 권한이 없습니다.");
+  history.replaceState(null, "", location.pathname);
+}
+
+function handlePostQuery() {
+  const postId = new URLSearchParams(location.search).get("post");
+  if (!postId) return;
+  const post = currentUserPosts.find((item) => String(item.id) === postId);
+  if (post) openPostModal(post);
+  else alert("게시글을 찾을 수 없습니다.");
   history.replaceState(null, "", location.pathname);
 }
 
