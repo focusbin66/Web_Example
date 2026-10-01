@@ -155,7 +155,6 @@ function renderMyMap() {
         iconAnchor: [18, 18]
       })
     });
-    marker.bindPopup(`<strong>${escapeMapText(post.nickname || "내 기록")}</strong><br>${escapeMapText((post.content || "사진 제보").slice(0, 100))}`);
     marker.on("click", () => openPostDetails(post));
     marker.addTo(markers);
     bounds.push([Number(post.latitude), Number(post.longitude)]);
@@ -169,12 +168,6 @@ function renderMyMap() {
     status.textContent = "위치를 등록한 내 게시글이 아직 없습니다.";
   }
   requestAnimationFrame(() => myPostsMap.invalidateSize());
-}
-
-function escapeMapText(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
-  })[character]);
 }
 
 function openPostDetails(post) {
