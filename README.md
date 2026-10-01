@@ -80,6 +80,29 @@ function onAuthReady() {
 
 로그인 확인 전에 DB를 부르면 내 정보가 아직 없어서 실패합니다.
 
+## 게시판 지도·저장·수정 기능 설정
+
+게시판에는 코로그 모양 위치 마커, 현재 위치 기준 5km 주변 기록, 사진 상세 팝업,
+AI 자연어 검색, 개인 저장, 본인 게시글 수정·삭제가 포함되어 있습니다.
+
+개인 저장 및 수정 기능은 Supabase 데이터베이스 설정이 필요합니다.
+Supabase **SQL Editor**에서 [supabase/setup-personal-saves.sql](supabase/setup-personal-saves.sql)의 내용을 한 번 실행하세요.
+이 SQL은 `saved_posts` 테이블을 만들고 저장 행을 사용자 본인만 읽고 쓸 수 있도록 RLS를 설정하며,
+게시글 수정 권한과 AI 분석 컬럼도 준비합니다.
+
+기존 `posts` 테이블의 RLS에 모든 사용자에게 UPDATE/DELETE를 허용하는 정책이 있다면 제거하세요.
+PostgreSQL RLS 정책은 permissive 정책끼리 OR로 결합되므로, 본인 전용 정책을 추가하는 것만으로
+이미 존재하는 넓은 권한 정책이 제한되지는 않습니다. `posts` 테이블의 UPDATE/DELETE 정책은
+`auth.uid() = user_id` 조건이어야 합니다.
+
+사진 첨부는 JPG, PNG, WEBP, GIF 및 10MB 이하만 허용합니다. AI 사진 분석이 실패해도
+분석 결과를 요구하지 않으므로 게시글 작성은 계속할 수 있습니다. 원본 사진은 저장하고,
+AI 분석 요청에는 브라우저에서 축소한 이미지를 사용합니다.
+
+게시글 상세에서 ‘가기 전’ 또는 ‘다녀왔어요’를 선택하고 방문 인원을 집계하려면
+Supabase **SQL Editor**에서 [supabase/setup-post-visits.sql](supabase/setup-post-visits.sql)을 한 번 실행하세요.
+방문 상태는 로그인한 사용자별로 저장되며, ‘다녀왔어요’를 선택한 사용자 수가 표시됩니다.
+
 ---
 
 # 새 페이지 만드는 법 (4단계)

@@ -147,6 +147,45 @@
       font-size: 14px;
     }
 
+    .map-filter {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .map-filter select {
+      min-width: 210px;
+      padding: 10px 12px;
+      border: 1px solid #cad8b9;
+      border-radius: 12px;
+      background: #fffef8;
+      color: var(--forest-dark);
+      font: inherit;
+    }
+
+    #showMyLocationBtn {
+      margin-top: 14px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--forest-green);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #showMyLocationBtn:hover { background: var(--forest-dark); }
+
+    #locationStatus {
+      min-height: 1.5em;
+      margin: 8px 0 0;
+      color: #71836b;
+      font-size: 14px;
+    }
+
     .map-popup {
       max-width: 220px;
       color: #314b34;
@@ -306,6 +345,23 @@
         게시글에 등록된 위치가 잎사귀 마커로 표시돼요.<br>
         마커를 누르면 그곳에 남겨진 이야기를 볼 수 있습니다.
       </p>
+
+      <div class="map-filter">
+        <label for="probabilityFilter">코로그 발견 가능성 필터</label>
+        <select id="probabilityFilter">
+          <option value="all">전체 확률</option>
+          <option value="0-20">0~20%</option>
+          <option value="21-40">21~40%</option>
+          <option value="41-60">41~60%</option>
+          <option value="61-80">61~80%</option>
+          <option value="81-100">81~100%</option>
+          <option value="none">퍼센트 분석 없음</option>
+        </select>
+      </div>
+      <p class="map-description">사진을 바탕으로 한 AI 추정이며 실제 확률이 아닙니다.</p>
+
+      <button id="showMyLocationBtn" type="button">📍 현재 내 위치 표시</button>
+      <p id="locationStatus" aria-live="polite"></p>
 
       <div id="homeMap" aria-label="게시글 위치 지도"></div>
 

@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>내 정보</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    #myPostsMap { height: 380px; border: 3px solid #cbdab7; border-radius: 18px; }
+    .mypage-post-image { display: block; width: 100%; max-height: 300px; object-fit: cover; border-radius: 14px; margin: 12px 0; cursor: pointer; }
+    .mypage-post-content { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .mypage-post-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .korok-probability { display: inline-block; padding: 8px 12px; border-radius: 999px; background: #e7f0d5; color: #315d3b; }
+  </style>
 </head>
 <body data-require-auth="true">
 
@@ -31,12 +39,14 @@
     </section>
 
     <section class="card forest-card">
-      <h2>🌱 내가 쓴 글</h2>
-      <ul id="myList"></ul>
+      <h2>🗺️ 내가 등록한 장소 지도</h2>
+      <p id="myMapStatus" class="map-description" aria-live="polite">지도를 불러오는 중...</p>
+      <div id="myPostsMap" aria-label="내 게시글 위치 지도"></div>
     </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/static/js/common.js"></script>
   <script src="/static/js/mypage.js"></script>
 

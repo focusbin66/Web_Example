@@ -1,131 +1,102 @@
-
-// AI 사진 분석 결과 임시 보관
+// 게시판 지도, 사진 게시글, 저장 및 관리 기능
 let currentImageAnalysis = "";
-
-
-// 게시판 페이지 전용 코드
-// 사진 미리보기 + AI 사진 분석 기능 통합
-
-// =========================================================
-// 지도 전역 변수
-// =========================================================
-
+let currentUserPosts = [];
 let postMap = null;
+let recordsMap = null;
 let selectedMarker = null;
-
+let postMarkers = null;
 let selectedLatitude = null;
 let selectedLongitude = null;
+let currentPost = null;
+let editingPost = null;
+let savedPostIds = new Set();
+let nearbyOrigin = null;
+let currentVisitStatus = null;
+let currentVisitedCount = 0;
+let visitStatusRequestId = 0;
 
-// =========================================================
-// 🍃 이파리 지도 마커
-// =========================================================
-
-function createLeafMarker(latitude, longitude) {
-  return L.marker(
-    [latitude, longitude],
-    {
-      icon: L.divIcon({
-        className: "leaf-marker-container",
-        html: '<span class="leaf-marker">🍃</span>',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
-      })
-    }
-  );
-}
-
-// =========================================================
-// 로그인 완료 후 실행
-// =========================================================
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif"
+]);
 
 function onAuthReady() {
-  loadPosts();
   initPostMap();
+  initRecordsMap();
+  setupVisitStatusControls();
+  loadSavedPostIds();
+  loadPosts();
 }
 
-
-// =========================================================
-// HTML 문자 처리
-// =========================================================
-
-function escapeHTML(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+function createPostMarker(latitude, longitude, post) {
+  return L.marker([latitude, longitude], { icon: createLeafIcon() })
+    .on("click", function () {
+      openPostModal(post);
+    });
 }
 
-
-// =========================================================
-// 지도 초기화
-// =========================================================
-
-function initPostMap() {
-  const mapElement = document.getElementById("postMap");
-
-  if (!mapElement || postMap) return;
-
-  postMap = L.map("postMap").setView(
-    [37.5665, 126.9780],
-    13
-  );
-
-  L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }
-  ).addTo(postMap);
-
-  postMap.on("click", function (event) {
-    setSelectedLocation(
-      event.latlng.lat,
-      event.latlng.lng
-    );
+function createLeafIcon() {
+  return L.divIcon({
+    className: "leaf-marker-container",
+    html: '<span class="leaf-marker">🍃</span>',
+    iconSize: [36, 36],
+    iconAnchor: [18, 18]
   });
 }
 
+function initPostMap() {
+  const element = document.getElementById("postMap");
+  if (!element || postMap || typeof L === "undefined") return;
 
-// =========================================================
-// 위치 선택
-// =========================================================
+  postMap = L.map(element).setView([37.5665, 126.978], 13);
+  addMapTiles(postMap);
+  postMap.on("click", function (event) {
+    setSelectedLocation(event.latlng.lat, event.latlng.lng);
+  });
+}
+
+function initRecordsMap() {
+  const element = document.getElementById("recordsMap");
+  if (!element || recordsMap || typeof L === "undefined") return;
+
+  recordsMap = L.map(element).setView([37.5665, 126.978], 12);
+  addMapTiles(recordsMap);
+  postMarkers = L.featureGroup().addTo(recordsMap);
+}
+
+function addMapTiles(map) {
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(map);
+}
 
 function setSelectedLocation(latitude, longitude) {
   selectedLatitude = latitude;
   selectedLongitude = longitude;
 
-  if (selectedMarker) {
-    postMap.removeLayer(selectedMarker);
-  }
-
-  selectedMarker = createLeafMarker(
-  latitude,
-  longitude
-).addTo(postMap);
-
-  selectedMarker
-    .bindPopup("제보 위치")
+  if (selectedMarker) postMap.removeLayer(selectedMarker);
+  selectedMarker = L.marker([latitude, longitude], { icon: createLeafIcon() })
+    .addTo(postMap)
+    .bindPopup("이 위치에 제보를 등록합니다.")
     .openPopup();
 
-  const locationBox =
-    document.getElementById("selectedLocation");
-
-  if (locationBox) {
-    locationBox.textContent =
-      "선택한 위치: " +
-      latitude.toFixed(6) +
-      ", " +
-      longitude.toFixed(6);
+  const label = document.getElementById("selectedLocation");
+  if (label) {
+    label.textContent = `선택한 위치: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
   }
 }
 
-
-// =========================================================
-// 현재 위치 사용
-// =========================================================
+function clearSelectedLocation() {
+  selectedLatitude = null;
+  selectedLongitude = null;
+  if (selectedMarker && postMap) postMap.removeLayer(selectedMarker);
+  selectedMarker = null;
+  document.getElementById("selectedLocation").textContent = "아직 위치를 선택하지 않았습니다.";
+}
 
 function useMyLocation() {
   if (!navigator.geolocation) {
@@ -135,2254 +106,760 @@ function useMyLocation() {
 
   navigator.geolocation.getCurrentPosition(
     function (position) {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
-
-      if (postMap) {
-        postMap.setView(
-          [latitude, longitude],
-          16
-        );
-      }
-
+      const { latitude, longitude } = position.coords;
+      if (postMap) postMap.setView([latitude, longitude], 16);
       setSelectedLocation(latitude, longitude);
     },
-    function () {
-      alert(
-        "현재 위치를 가져오지 못했습니다.\n" +
-        "브라우저의 위치 권한을 확인해 주세요."
-      );
-    }
+    function (error) {
+      alert(error.code === error.PERMISSION_DENIED
+        ? "위치 권한을 허용한 뒤 다시 시도해 주세요."
+        : "현재 위치를 가져오지 못했습니다.");
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
   );
 }
 
-
-// =========================================================
-// 사진 미리보기 + AI 분석 버튼 활성화
-// =========================================================
-
-function setupImageFeatures() {
-  const imageInput =
-    document.getElementById("imageFile");
-
-  const preview =
-    document.getElementById("imagePreview");
-
-  const analyzeButton =
-    document.getElementById("analyzeImageBtn");
-
-  if (!imageInput) return;
-
-  if (imageInput.dataset.boardPreviewBound === "true") return;
-  imageInput.dataset.boardPreviewBound = "true";
-
-  if (analyzeButton) {
-    analyzeButton.disabled = true;
-  }
-
-  imageInput.addEventListener("change", function () {
-    const file = imageInput.files?.[0];
-
-    currentImageAnalysis = "";
-
-    if (preview) {
-      preview.src = "";
-      preview.style.display = "none";
-    }
-
-    if (analyzeButton) {
-      analyzeButton.disabled = true;
-    }
-
-    const resultBox =
-      document.getElementById("imageAnalysisResult");
-
-    if (resultBox) {
-      resultBox.textContent = "";
-    }
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("이미지 파일만 첨부할 수 있습니다.");
-      imageInput.value = "";
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      alert("사진은 10MB 이하만 첨부할 수 있습니다.");
-      imageInput.value = "";
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = function (event) {
-      if (preview) {
-        preview.src = event.target.result;
-        preview.style.display = "block";
-      }
-
-      if (analyzeButton) {
-        analyzeButton.disabled = false;
-      }
-    };
-
-    reader.onerror = function () {
-      alert("사진을 읽지 못했습니다.");
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-
-// =========================================================
-// AI 사진 분석
-// =========================================================
-
-async function analyzeImage() {
-  const imageInput =
-    document.getElementById("imageFile");
-
-  const analyzeButton =
-    document.getElementById("analyzeImageBtn");
-
-  const resultBox =
-    document.getElementById("imageAnalysisResult");
-
-  const file = imageInput?.files?.[0];
-
-  if (!file) {
-    alert("먼저 사진을 선택해 주세요.");
-    return;
-  }
-
-  if (!resultBox) {
-    alert("사진 분석 결과를 표시할 영역이 없습니다.");
-    return;
-  }
-
-  if (analyzeButton) {
-    analyzeButton.disabled = true;
-  }
-
-  currentImageAnalysis = "";
-  resultBox.textContent = "사진을 분석하는 중...";
-
-  try {
-    const imageData = await new Promise(
-      function (resolve, reject) {
-        const reader = new FileReader();
-
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(
-          new Error("사진을 읽지 못했습니다.")
-        );
-
-        reader.readAsDataURL(file);
-      }
-    );
-
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        action: "analyze-image",
-        image: imageData,
-        prompt:
-          "이 사진에 보이는 장소와 주변 환경을 설명해줘. " +
-          "확실하지 않은 정보는 추측하지 말고, " +
-          "코로그가 나올 법한 특징이 있다면 함께 알려줘. " +
-          "게시판에 올릴 수 있는 자연스러운 한국어로 답해줘."
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        result.error || "사진 분석 요청에 실패했습니다."
-      );
-    }
-
-    const answer =
-      result.answer ||
-      result.result ||
-      result.text;
-
-    if (!answer) {
-      throw new Error("AI 분석 결과가 비어 있습니다.");
-    }
-
-    // AI 분석 결과를 게시글 저장용으로 보관
-    currentImageAnalysis = answer;
-    resultBox.textContent = answer;
-
-  } catch (error) {
-    console.error("사진 분석 실패:", error);
-
-    resultBox.textContent =
-      "사진 분석에 실패했습니다. " +
-      (error.message || "잠시 후 다시 시도해 주세요.");
-
-  } finally {
-    if (analyzeButton) {
-      analyzeButton.disabled =
-        !imageInput?.files?.length;
-    }
-  }
-}
-
-
-// =========================================================
-// 분석 결과를 게시글에 넣기
-// =========================================================
-
-function insertImageAnalysis() {
-  const resultBox =
-    document.getElementById("imageAnalysisResult");
-
-  const contentBox =
-    document.getElementById("content");
-
-  if (!resultBox || !contentBox) return;
-
-  const analysis = resultBox.textContent.trim();
-
-  if (
-    !analysis ||
-    analysis.includes("분석하는 중") ||
-    analysis.includes("분석에 실패")
-  ) {
-    alert("먼저 사진 분석을 완료해 주세요.");
-    return;
-  }
-
-  if (contentBox.value.trim()) {
-    contentBox.value += "\n\n" + analysis;
-  } else {
-    contentBox.value = analysis;
-  }
-
-  contentBox.focus();
-}
-
-
-// =========================================================
-// 초기화
-// =========================================================
-
-function initializeBoardFeatures() {
-  setupImageFeatures();
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener(
-    "DOMContentLoaded",
-    initializeBoardFeatures
-  );
-} else {
-  initializeBoardFeatures();
-}
-// =========================================================
-// 게시글 작성
-// =========================================================
-
-async function addPost() {
-  const box = document.getElementById("content");
-  const content = box.value.trim();
-
-  if (!content) {
-    alert("내용을 입력해 주세요.");
-    return;
-  }
-
-  const addButton = document.querySelector(
-    'button[onclick="addPost()"]'
-  );
-
-  if (addButton) addButton.disabled = true;
-
-  try {
-    const imageInput = document.getElementById("imageFile");
-    const file = imageInput.files[0];
-    let imageUrl = null;
-
-    // 사진 업로드
-    if (file) {
-      if (!file.type.startsWith("image/")) {
-        alert("이미지 파일만 첨부할 수 있습니다.");
-        return;
-      }
-
-      if (file.size > 10 * 1024 * 1024) {
-        alert("사진은 10MB 이하만 업로드할 수 있습니다.");
-        return;
-      }
-
-      const extension = file.name
-        .split(".")
-        .pop()
-        .toLowerCase();
-
-      const fileName =
-        currentUser.id +
-        "/" +
-        Date.now() +
-        "-" +
-        (
-          crypto.randomUUID
-            ? crypto.randomUUID()
-            : Date.now()
-        ) +
-        "." +
-        extension;
-
-      const { error: uploadError } =
-        await db.storage
-          .from("post-images")
-          .upload(fileName, file, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: file.type
-          });
-
-      if (uploadError) {
-        console.error("사진 업로드 실패:", uploadError);
-
-        alert(
-          "사진 업로드에 실패했습니다.\n" +
-          uploadError.message
-        );
-
-        return;
-      }
-
-      const { data: publicUrlData } =
-        db.storage
-          .from("post-images")
-          .getPublicUrl(fileName);
-
-      imageUrl = publicUrlData.publicUrl;
-    }
-
-    // 게시글 저장
-    const { error } = await db
-      .from("posts")
-      .insert({
-        content: content,
-        nickname: currentUser.email.split("@")[0],
-        user_id: currentUser.id,
-        image_url: imageUrl,
-        latitude: selectedLatitude,
-        longitude: selectedLongitude,
-        analysis: currentImageAnalysis || null
-      });
-
-    if (error) {
-      if (imageUrl) {
-        await db.storage
-          .from("post-images")
-          .remove([
-            imageUrl.split("/post-images/")[1]
-          ]);
-      }
-
-      console.error("쓰기 실패:", error);
-
-      alert("쓰기 실패: " + error.message);
-      return;
-    }
-
-    // 입력 초기화
-    box.value = "";
-    imageInput.value = "";
-
-    const preview =
-      document.getElementById("imagePreview");
-
-    if (preview) {
-      preview.src = "";
-      preview.style.display = "none";
-    }
-
-    currentImageAnalysis = "";
-
-    selectedLatitude = null;
-    selectedLongitude = null;
-
-    if (selectedMarker && postMap) {
-      postMap.removeLayer(selectedMarker);
-      selectedMarker = null;
-    }
-
-    const locationBox =
-      document.getElementById("selectedLocation");
-
-    if (locationBox) {
-      locationBox.textContent =
-        "아직 위치를 선택하지 않았습니다.";
-    }
-
-    const aiBox = document.getElementById("aiBox");
-    if (aiBox) aiBox.textContent = "";
-
-    await loadPosts();
-
-  } finally {
-    if (addButton) addButton.disabled = false;
-  }
-}
-
-
-// =========================================================
-// 게시글 삭제
-// =========================================================
-
-async function deletePost(id) {
-  const { error } = await db
-    .from("posts")
-    .delete()
-    .eq("id", id);
+async function loadSavedPostIds() {
+  const { data, error } = await db
+    .from("saved_posts")
+    .select("post_id")
+    .eq("user_id", currentUser.id);
 
   if (error) {
-    console.error("삭제 실패:", error);
-    alert("삭제 실패: " + error.message);
+    console.warn("저장 기능을 사용하려면 Supabase에 saved_posts 테이블을 설정해 주세요.", error);
     return;
   }
-
-  await loadPosts();
+  savedPostIds = new Set((data || []).map((row) => String(row.post_id)));
+  renderPosts(currentUserPosts);
 }
-
-
-// =========================================================
-// AI 문장 다듬기
-// =========================================================
-
-async function polish() {
-  const content = document
-    .getElementById("content")
-    .value
-    .trim();
-
-  if (!content) return;
-
-  const btn = document.getElementById("aiBtn");
-  const box = document.getElementById("aiBox");
-
-  btn.disabled = true;
-  box.textContent = "생각하는 중...";
-
-  try {
-    box.textContent = await askAI(
-      "다음 문장을 게시판에 올리기 좋게 " +
-      "자연스럽고 재미있게 다듬어줘. " +
-      "한 문장으로만 답해줘. " +
-      "원래 의미는 바꾸지 마.\n\n" +
-      content
-    );
-
-  } catch (e) {
-    console.error("AI 문장 다듬기 실패:", e);
-
-    box.textContent =
-      "AI 기능은 vercel dev 또는 " +
-      "배포된 주소에서만 동작합니다.";
-
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-
-// =========================================================
-// AI 자연어 게시판 검색
-// =========================================================
-
-async function aiSearchPosts() {
-  const input =
-    document.getElementById("aiSearchInput");
-
-  const resultBox =
-    document.getElementById("aiSearchResult");
-
-  const btn =
-    document.getElementById("aiSearchBtn");
-
-  const query = input.value.trim();
-
-  if (!query) {
-    resultBox.textContent =
-      "검색 내용을 입력해 주세요.";
-    return;
-  }
-
-  btn.disabled = true;
-  resultBox.textContent =
-    "게시글을 분석하는 중...";
-
-  try {
-    const { data, error } = await db
-      .from("posts")
-      .select("id, nickname, content, created_at")
-      .order("created_at", {
-        ascending: false
-      })
-      .limit(50);
-
-    if (error) throw error;
-
-    if (!data || data.length === 0) {
-      resultBox.textContent =
-        "검색할 게시글이 없습니다.";
-      return;
-    }
-
-    const postsText = data
-      .map(function (p) {
-        return (
-          "[게시글 ID: " + p.id + "]\n" +
-          "작성자: " + p.nickname + "\n" +
-          "내용: " + p.content
-        );
-      })
-      .join("\n\n");
-
-    const prompt =
-      "너는 게시판 검색 도우미야.\n" +
-      "사용자가 자연어로 요청한 내용을 읽고 " +
-      "아래 게시글 중 관련 있는 게시글만 골라줘.\n\n" +
-
-      "규칙:\n" +
-      "1. 게시글에 실제로 적힌 내용만 근거로 판단해.\n" +
-      "2. 없는 정보를 만들어내지 마.\n" +
-      "3. 관련이 약한 글은 제외해.\n" +
-      "4. 최대 5개만 골라.\n" +
-      "5. 없으면 '관련 게시글이 없습니다.'라고 답해.\n\n" +
-
-      "사용자 검색 요청:\n" +
-      query +
-      "\n\n" +
-
-      "게시글 목록:\n" +
-      postsText +
-      "\n\n" +
-
-      "형식:\n" +
-      "[게시글 ID: 숫자]\n" +
-      "이유: 관련된 이유 한 문장";
-
-    const answer = await askAI(prompt);
-    resultBox.textContent = answer;
-
-  } catch (e) {
-    console.error("AI 검색 실패:", e);
-
-    resultBox.textContent =
-      "AI 검색에 실패했습니다. " +
-      "잠시 후 다시 시도해 주세요.";
-
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-
-// =========================================================
-// AI 검색 Enter
-// =========================================================
-
-document.addEventListener(
-  "DOMContentLoaded",
-  function () {
-    const input =
-      document.getElementById("aiSearchInput");
-
-    if (!input) return;
-
-    input.addEventListener(
-      "keydown",
-      function (event) {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          aiSearchPosts();
-        }
-      }
-    );
-  }
-);
-
-/* =========================================================
-   사진 AI 분석
-   ========================================================= */
-
-// DOMContentLoaded가 이미 실행됐어도 초기화되도록 처리
-function setupImageAnalysis() {
-  const imageInput = document.getElementById("imageFile");
-  const analyzeBtn = document.getElementById("analyzeImageBtn");
-  const resultBox = document.getElementById("imageAnalysisResult");
-  const contentBox = document.getElementById("content");
-  const useResultBtn = document.getElementById("useImageAnalysisBtn");
-
-  if (!imageInput || !analyzeBtn || !resultBox) return;
-
-  let analysisText = "";
-
-  // 사진 선택 시 분석 버튼 활성화
-  imageInput.addEventListener("change", function () {
-    const file = imageInput.files[0];
-
-    currentImageAnalysis = "";
-    analysisText = "";
-    resultBox.textContent = "";
-
-    if (useResultBtn) {
-      useResultBtn.disabled = true;
-    }
-
-    analyzeBtn.disabled = !file;
-  });
-
-  // 사진 분석 실행
-  analyzeBtn.addEventListener("click", async function () {
-    const file = imageInput.files[0];
-
-    if (!file) {
-      resultBox.textContent = "먼저 사진을 선택해 주세요.";
-      return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-      resultBox.textContent = "이미지 파일만 분석할 수 있습니다.";
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      resultBox.textContent = "사진은 10MB 이하만 분석할 수 있습니다.";
-      return;
-    }
-
-    analyzeBtn.disabled = true;
-    resultBox.textContent = "사진을 분석하고 있어요...";
-
-    try {
-      const imageData = await fileToDataURL(file);
-
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          action: "analyze-image",
-          image: imageData,
-          prompt:
-            "이 사진을 보고 코로그 제보 게시판에 올릴 설명을 작성해줘. " +
-            "사진에서 실제로 확인할 수 있는 특징만 말하고, " +
-            "확실하지 않은 장소나 정보를 지어내지 마. " +
-            "자연스럽고 짧은 한국어 문장으로 작성해줘."
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "사진 분석 요청에 실패했습니다."
-        );
-      }
-
-      // API 응답의 텍스트 가져오기
-      analysisText =
-        data.text ||
-        data.answer ||
-        data.result ||
-        data.content ||
-        "";
-
-      currentImageAnalysis = analysisText;
-
-      if (typeof analysisText !== "string" || !analysisText.trim()) {
-        throw new Error("AI 분석 결과가 비어 있습니다.");
-      }
-
-      resultBox.textContent = analysisText;
-
-      if (useResultBtn) {
-        useResultBtn.disabled = false;
-      }
-
-    } catch (error) {
-      console.error("사진 AI 분석 실패:", error);
-
-      resultBox.textContent =
-        "사진 분석에 실패했습니다.\n" +
-        (error.message || "잠시 후 다시 시도해 주세요.");
-
-    } finally {
-      analyzeBtn.disabled = false;
-    }
-  });
-
-  // 분석 결과를 게시글 작성 칸에 넣기
-  if (useResultBtn) {
-    useResultBtn.addEventListener("click", function () {
-      if (!analysisText || !contentBox) return;
-
-      contentBox.value = analysisText;
-      contentBox.focus();
-    });
-  }
-}
-
-
-// 파일을 Base64 Data URL로 변환
-function fileToDataURL(file) {
-  return new Promise(function (resolve, reject) {
-    const reader = new FileReader();
-
-    reader.onload = function () {
-      resolve(reader.result);
-    };
-
-    reader.onerror = function () {
-      reject(new Error("사진을 읽지 못했습니다."));
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-
-// DOM 준비 상태에 맞춰 실행
-if (document.readyState === "loading") {
-  document.addEventListener(
-    "DOMContentLoaded",
-    setupImageAnalysis
-  );
-} else {
-  setupImageAnalysis();
-}
-
-// ======================================
-// 게시글 목록 + 팝업 연결
-// ======================================
-
-const postModal = document.getElementById("postModal");
-
-function openPostModal(post) {
-  if (!postModal) return;
-
-  const image = document.getElementById("modalImage");
-  const content = document.getElementById("modalContent");
-  const meta = document.getElementById("modalMeta");
-  const location = document.getElementById("modalLocation");
-
-  content.textContent = post.content || "내용이 없습니다.";
-
-  meta.textContent =
-    `${post.nickname || "익명"} · ${
-      post.created_at
-        ? new Date(post.created_at).toLocaleDateString("ko-KR")
-        : ""
-    }`;
-
-  // 사진
-  if (post.image_url) {
-    image.src = post.image_url;
-    image.style.display = "block";
-  } else {
-    image.removeAttribute("src");
-    image.style.display = "none";
-  }
-
-  // 위치
-  location.replaceChildren();
-
-  if (post.latitude != null && post.longitude != null) {
-    const title = document.createElement("p");
-    title.textContent = "📍 발견 위치";
-
-    const link = document.createElement("a");
-    link.href =
-      `https://www.openstreetmap.org/?mlat=${post.latitude}` +
-      `&mlon=${post.longitude}` +
-      `#map=17/${post.latitude}/${post.longitude}`;
-
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = "지도에서 위치 보기";
-
-    location.append(title, link);
-  } else {
-    location.textContent = "위치 정보가 없습니다.";
-  }
-
-  // AI 분석 결과
-  const analysisBox =
-    document.getElementById("modalAnalysis");
-
-  const analysisText =
-    document.getElementById("modalAnalysisText");
-
-  if (post.analysis) {
-    analysisText.textContent = post.analysis;
-    analysisBox.hidden = false;
-  } else {
-    analysisText.textContent = "";
-    analysisBox.hidden = true;
-  }
-
-  postModal.classList.add("open");
-  document.body.style.overflow = "hidden";
-}
-
-
-// ======================================
-// 팝업 닫기
-// ======================================
-
-function closePostModal() {
-  if (!postModal) return;
-
-  postModal.classList.remove("open");
-  document.body.style.overflow = "";
-}
-
-document
-  .getElementById("closeModal")
-  ?.addEventListener("click", closePostModal);
-
-postModal?.addEventListener("click", function (event) {
-  if (event.target === postModal) {
-    closePostModal();
-  }
-});
-
-document.addEventListener("keydown", function (event) {
-  if (event.key === "Escape") {
-    closePostModal();
-  }
-});
-
-
-// ======================================
-// 게시글 목록 불러오기
-// ======================================
 
 async function loadPosts() {
   const list = document.getElementById("list");
+  if (list) list.innerHTML = "<li>숲속 기록을 불러오는 중...</li>";
 
-  if (!list) return;
+  const { data, error } = await db
+    .from("posts")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  list.innerHTML = "<li>게시글을 불러오는 중...</li>";
-
-  try {
-    const { data, error } = await db
-      .from("posts")
-      .select("*")
-      .order("created_at", {
-        ascending: false
-      });
-
-    if (error) throw error;
-
-    list.replaceChildren();
-
-    if (!data || data.length === 0) {
-      list.innerHTML =
-        "<li>아직 등록된 제보가 없습니다.</li>";
-      return;
-    }
-
-    data.forEach(function (post) {
-      const item = document.createElement("li");
-      item.className = "post-card";
-      item.tabIndex = 0;
-      item.setAttribute("role", "button");
-
-      const title = document.createElement("h3");
-      title.textContent =
-        post.nickname || "익명";
-
-      const text = document.createElement("p");
-      text.textContent =
-        post.content || "내용이 없습니다.";
-
-      const date = document.createElement("p");
-      date.className = "post-meta";
-      date.textContent = post.created_at
-        ? new Date(post.created_at)
-            .toLocaleDateString("ko-KR")
-        : "";
-
-      item.append(title, text);
-
-      // 목록에서는 작은 사진만 표시
-      if (post.image_url) {
-        const image = document.createElement("img");
-        image.src = post.image_url;
-        image.alt = "제보 사진";
-        image.className = "post-image";
-        image.loading = "lazy";
-        item.appendChild(image);
-      }
-
-      item.appendChild(date);
-
-      // 클릭하면 팝업 열기
-      item.addEventListener("click", function () {
-        openPostModal(post);
-      });
-
-      // 키보드 접근성
-      item.addEventListener("keydown", function (event) {
-        if (
-          event.key === "Enter" ||
-          event.key === " "
-        ) {
-          event.preventDefault();
-          openPostModal(post);
-        }
-      });
-
-      list.appendChild(item);
-    });
-
-  } catch (error) {
+  if (error) {
     console.error("게시글 불러오기 실패:", error);
-
-    list.innerHTML =
-      "<li>게시글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</li>";
-  }
-}
-
-// 게시판 페이지 전용 코드
-// 사진 미리보기 + AI 사진 분석 기능 통합
-
-// =========================================================
-// 🍃 이파리 지도 마커
-// =========================================================
-
-function createLeafMarker(latitude, longitude) {
-  return L.marker(
-    [latitude, longitude],
-    {
-      icon: L.divIcon({
-        className: "leaf-marker-container",
-        html: '<span class="leaf-marker">🍃</span>',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
-      })
-    }
-  );
-}
-
-
-// =========================================================
-// 로그인 완료 후 실행
-// =========================================================
-
-function onAuthReady() {
-  loadPosts();
-  initPostMap();
-}
-
-
-// =========================================================
-// HTML 문자 처리
-// =========================================================
-
-function escapeHTML(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-
-// =========================================================
-// 지도 초기화
-// =========================================================
-
-function initPostMap() {
-  const mapElement = document.getElementById("postMap");
-
-  if (!mapElement || postMap) return;
-
-  postMap = L.map("postMap").setView(
-    [37.5665, 126.9780],
-    13
-  );
-
-  L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-    }
-  ).addTo(postMap);
-
-  postMap.on("click", function (event) {
-    setSelectedLocation(
-      event.latlng.lat,
-      event.latlng.lng
-    );
-  });
-}
-
-
-// =========================================================
-// 위치 선택
-// =========================================================
-
-function setSelectedLocation(latitude, longitude) {
-  selectedLatitude = latitude;
-  selectedLongitude = longitude;
-
-  if (selectedMarker) {
-    postMap.removeLayer(selectedMarker);
-  }
-
-  selectedMarker = createLeafMarker(
-    latitude,
-    longitude
-  ).addTo(postMap);
-
-  selectedMarker
-    .bindPopup("제보 위치")
-    .openPopup();
-
-  const locationBox =
-    document.getElementById("selectedLocation");
-
-  if (locationBox) {
-    locationBox.textContent =
-      "선택한 위치: " +
-      latitude.toFixed(6) +
-      ", " +
-      longitude.toFixed(6);
-  }
-}
-
-
-// =========================================================
-// 현재 위치 사용
-// =========================================================
-
-function useMyLocation() {
-  if (!navigator.geolocation) {
-    alert("이 브라우저에서는 위치 기능을 사용할 수 없습니다.");
+    if (list) list.innerHTML = "<li>게시글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</li>";
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
-    function (position) {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
-
-      if (postMap) {
-        postMap.setView(
-          [latitude, longitude],
-          16
-        );
-      }
-
-      setSelectedLocation(latitude, longitude);
-    },
-    function () {
-      alert(
-        "현재 위치를 가져오지 못했습니다.\n" +
-        "브라우저의 위치 권한을 확인해 주세요."
-      );
-    }
-  );
+  currentUserPosts = data || [];
+  renderPosts(currentUserPosts);
+  renderPostMarkers(currentUserPosts);
+  handleEditQuery();
 }
 
+function renderPosts(posts) {
+  const list = document.getElementById("list");
+  if (!list) return;
+  list.replaceChildren();
 
-// =========================================================
-// 사진 미리보기 + AI 분석 버튼
-// =========================================================
-
-function setupImageFeatures() {
-  const imageInput =
-    document.getElementById("imageFile");
-
-  const preview =
-    document.getElementById("imagePreview");
-
-  const analyzeButton =
-    document.getElementById("analyzeImageBtn");
-
-  if (!imageInput) return;
-
-  if (imageInput.dataset.boardPreviewBound === "true") return;
-  imageInput.dataset.boardPreviewBound = "true";
-
-  if (analyzeButton) {
-    analyzeButton.disabled = true;
+  if (!posts.length) {
+    const empty = document.createElement("li");
+    empty.textContent = nearbyOrigin
+      ? "현재 위치 5km 안에 등록된 기록이 없습니다."
+      : "아직 등록된 제보가 없습니다.";
+    list.appendChild(empty);
+    return;
   }
 
-  imageInput.addEventListener("change", function () {
-    const file = imageInput.files?.[0];
+  posts.forEach((post) => {
+    const card = document.createElement("li");
+    card.className = "post-card";
 
-    if (preview) {
-      preview.src = "";
-      preview.style.display = "none";
+    const heading = document.createElement("h3");
+    heading.textContent = post.nickname || "익명 여행자";
+    card.appendChild(heading);
+
+    const body = document.createElement("p");
+    body.className = "post-card__content";
+    body.textContent = post.content || "내용이 없습니다.";
+    card.appendChild(body);
+
+    if (post.image_url) {
+      const image = document.createElement("img");
+      image.className = "post-image";
+      image.src = post.image_url;
+      image.alt = "제보 사진 (누르면 상세 보기)";
+      image.loading = "lazy";
+      image.addEventListener("click", () => openPostModal(post));
+      card.appendChild(image);
     }
 
-    if (analyzeButton) {
-      analyzeButton.disabled = true;
+    const date = document.createElement("p");
+    date.className = "post-meta";
+    date.textContent = post.created_at
+      ? new Date(post.created_at).toLocaleString("ko-KR")
+      : "";
+    card.appendChild(date);
+
+    const actions = document.createElement("div");
+    actions.className = "post-card__actions";
+    const detail = document.createElement("button");
+    detail.type = "button";
+    detail.textContent = "자세히 보기";
+    detail.addEventListener("click", () => openPostModal(post));
+    actions.appendChild(detail);
+
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "post-card__save" + (savedPostIds.has(String(post.id)) ? " is-saved" : "");
+    save.textContent = savedPostIds.has(String(post.id)) ? "♥ 저장됨" : "♡ 저장";
+    save.addEventListener("click", () => togglePostSave(post));
+    actions.appendChild(save);
+
+    if (isOwnPost(post)) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "수정";
+      edit.addEventListener("click", () => startEditing(post));
+      actions.appendChild(edit);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => deletePost(post));
+      actions.appendChild(remove);
     }
 
-    const resultBox =
-      document.getElementById("imageAnalysisResult");
+    card.appendChild(actions);
+    card.addEventListener("click", (event) => {
+      if (!event.target.closest("button, img")) openPostModal(post);
+    });
+    list.appendChild(card);
+  });
+}
 
-    // 새로운 사진을 선택하면 이전 분석 결과 삭제
+function renderPostMarkers(posts) {
+  if (!recordsMap || !postMarkers) return;
+  postMarkers.clearLayers();
+  const locations = [];
+
+  posts.forEach((post) => {
+    const latitude = Number(post.latitude);
+    const longitude = Number(post.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    createPostMarker(latitude, longitude, post).addTo(postMarkers);
+    locations.push([latitude, longitude]);
+  });
+
+  if (!nearbyOrigin && locations.length) {
+    recordsMap.fitBounds(locations, { padding: [30, 30], maxZoom: 14 });
+  }
+  requestAnimationFrame(() => recordsMap.invalidateSize());
+}
+
+function isOwnPost(post) {
+  return Boolean(currentUser && post.user_id === currentUser.id);
+}
+
+function openPostModal(post) {
+  currentPost = post;
+  currentVisitStatus = null;
+  currentVisitedCount = 0;
+  renderVisitStatus();
+  loadPostVisitStatus(post);
+  document.getElementById("modalContent").textContent = post.content || "내용이 없습니다.";
+  document.getElementById("modalMeta").textContent = `${post.nickname || "익명 여행자"} · ${post.created_at ? new Date(post.created_at).toLocaleString("ko-KR") : ""}`;
+
+  const image = document.getElementById("modalImage");
+  image.hidden = !post.image_url;
+  if (post.image_url) image.src = post.image_url;
+  else image.removeAttribute("src");
+
+  const location = document.getElementById("modalLocation");
+  location.replaceChildren();
+  const hasLocation = post.latitude != null && post.longitude != null;
+  location.textContent = hasLocation
+    ? `📍 위치: ${Number(post.latitude).toFixed(5)}, ${Number(post.longitude).toFixed(5)}`
+    : "📍 위치 정보가 없습니다.";
+
+  const analysisBox = document.getElementById("modalAnalysis");
+  analysisBox.hidden = !post.analysis;
+  document.getElementById("modalAnalysisText").textContent = post.analysis || "";
+  const probability = getKorokProbability(post.analysis);
+  const probabilityLabel = document.getElementById("modalProbability");
+  probabilityLabel.hidden = probability == null;
+  probabilityLabel.textContent = probability == null
+    ? ""
+    : `🍃 코로그 발견 가능성: ${probability}% — 사진을 바탕으로 한 AI 추정이며 실제 확률이 아닙니다.`;
+
+  const saved = savedPostIds.has(String(post.id));
+  const saveButton = document.getElementById("savePostBtn");
+  saveButton.textContent = saved ? "♥ 저장됨" : "♡ 저장";
+  saveButton.classList.toggle("is-saved", saved);
+  document.getElementById("showPostOnMapBtn").hidden = !hasLocation;
+  document.getElementById("editPostBtn").hidden = !isOwnPost(post);
+  document.getElementById("deletePostBtn").hidden = !isOwnPost(post);
+
+  document.getElementById("postModal").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function setupVisitStatusControls() {
+  const plannedButton = document.getElementById("markPlannedBtn");
+  const visitedButton = document.getElementById("markVisitedBtn");
+  const clearButton = document.getElementById("clearVisitStatusBtn");
+  if (plannedButton) plannedButton.onclick = () => savePostVisitStatus("planned");
+  if (visitedButton) visitedButton.onclick = () => savePostVisitStatus("visited");
+  if (clearButton) clearButton.onclick = () => savePostVisitStatus(null);
+}
+
+function setVisitStatusButtonsDisabled(disabled) {
+  ["markPlannedBtn", "markVisitedBtn", "clearVisitStatusBtn"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = disabled;
+  });
+}
+
+function renderVisitStatus() {
+  const count = document.getElementById("visitCount");
+  const message = document.getElementById("visitStatusMessage");
+  if (count) count.textContent = `다녀온 사람 ${currentVisitedCount}명`;
+  if (message) {
+    message.textContent = currentVisitStatus === "planned"
+      ? "내 상태: 가기 전"
+      : currentVisitStatus === "visited"
+        ? "내 상태: 다녀왔어요"
+        : "아직 방문 상태를 선택하지 않았어요.";
+  }
+  ["markPlannedBtn", "markVisitedBtn"].forEach((id) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    const selected = button.dataset.status === currentVisitStatus;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+async function loadPostVisitStatus(post) {
+  const requestId = ++visitStatusRequestId;
+  const postId = String(post.id);
+  const count = document.getElementById("visitCount");
+  const message = document.getElementById("visitStatusMessage");
+  if (count) count.textContent = "방문 인원을 확인하고 있어요...";
+  if (message) message.textContent = "";
+  setVisitStatusButtonsDisabled(true);
+
+  try {
+    const { data, error } = await db.rpc("get_post_visit_summary", { p_post_id: post.id });
+    if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
+    if (error) throw error;
+
+    const summary = data?.[0];
+    currentVisitedCount = Number(summary?.visited_count) || 0;
+    currentVisitStatus = summary?.user_status || null;
+    renderVisitStatus();
+    setVisitStatusButtonsDisabled(false);
+  } catch (error) {
+    if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
+    if (count) count.textContent = "방문 인원을 불러오지 못했습니다.";
+    if (message) message.textContent = "Supabase에서 supabase/setup-post-visits.sql을 실행해 방문 기록 기능을 설정해 주세요.";
+    setVisitStatusButtonsDisabled(true);
+    console.error("방문 상태 불러오기 실패:", error);
+  }
+}
+
+async function savePostVisitStatus(status) {
+  const post = currentPost;
+  if (!post || (status === null && currentVisitStatus === null)) return;
+
+  const requestId = ++visitStatusRequestId;
+  const postId = String(post.id);
+  const previousStatus = currentVisitStatus;
+  const message = document.getElementById("visitStatusMessage");
+  if (message) message.textContent = "방문 상태를 저장하고 있어요...";
+  setVisitStatusButtonsDisabled(true);
+
+  try {
+    const result = status
+      ? await db.from("post_visit_status").upsert({
+          post_id: post.id,
+          user_id: currentUser.id,
+          status,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "post_id,user_id" })
+      : await db.from("post_visit_status").delete()
+          .eq("post_id", post.id)
+          .eq("user_id", currentUser.id);
+    if (result.error) throw result.error;
+    if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
+
+    currentVisitStatus = status;
+    if (previousStatus !== "visited" && status === "visited") currentVisitedCount++;
+    if (previousStatus === "visited" && status !== "visited") currentVisitedCount = Math.max(0, currentVisitedCount - 1);
+
+    const { data, error } = await db.rpc("get_post_visit_summary", { p_post_id: post.id });
+    if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
+    const summary = data?.[0];
+    if (!error && summary) currentVisitedCount = Number(summary.visited_count) || 0;
+
+    renderVisitStatus();
+    if (message) message.textContent = "방문 상태를 저장했어요.";
+    setVisitStatusButtonsDisabled(false);
+  } catch (error) {
+    if (requestId !== visitStatusRequestId || String(currentPost?.id) !== postId) return;
+    if (message) message.textContent = "저장에 실패했습니다. Supabase 설정과 권한을 확인해 주세요.";
+    setVisitStatusButtonsDisabled(false);
+    console.error("방문 상태 저장 실패:", error);
+  }
+}
+
+function closePostModal() {
+  document.getElementById("postModal")?.classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+document.getElementById("closeModal")?.addEventListener("click", closePostModal);
+document.getElementById("postModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "postModal") closePostModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePostModal();
+});
+
+function showPostOnMap() {
+  if (!currentPost || currentPost.latitude == null || currentPost.longitude == null) return;
+  closePostModal();
+  recordsMap?.setView([currentPost.latitude, currentPost.longitude], 16);
+  const marker = postMarkers?.getLayers().find((item) => {
+    const point = item.getLatLng();
+    return point.lat === Number(currentPost.latitude) && point.lng === Number(currentPost.longitude);
+  });
+  if (marker) {
+    const popup = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = currentPost.nickname || "익명 여행자";
+    const excerpt = document.createElement("p");
+    excerpt.textContent = (currentPost.content || "사진 제보").slice(0, 100);
+    popup.append(title, excerpt);
+    marker.bindPopup(popup).openPopup();
+  }
+}
+
+async function togglePostSave(post = currentPost) {
+  if (!post) return;
+  const postId = String(post.id);
+  const alreadySaved = savedPostIds.has(postId);
+  const result = alreadySaved
+    ? await db.from("saved_posts").delete().eq("user_id", currentUser.id).eq("post_id", post.id)
+    : await db.from("saved_posts").insert({ user_id: currentUser.id, post_id: post.id });
+
+  if (result.error) {
+    console.error("저장 처리 실패:", result.error);
+    alert("개인 저장 기능을 사용할 수 없습니다. Supabase에 saved_posts 테이블과 RLS 정책을 설정했는지 확인해 주세요.");
+    return;
+  }
+
+  if (alreadySaved) savedPostIds.delete(postId);
+  else savedPostIds.add(postId);
+  renderPosts(currentUserPosts);
+  if (currentPost) openPostModal(currentPost);
+}
+
+function toggleNearbyPosts() {
+  const status = document.getElementById("nearbyStatus");
+  if (!navigator.geolocation) {
+    status.textContent = "이 브라우저에서는 위치 기능을 사용할 수 없습니다.";
+    return;
+  }
+  status.textContent = "현재 위치를 확인하고 있어요...";
+  navigator.geolocation.getCurrentPosition((position) => {
+    nearbyOrigin = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude
+    };
+    const nearby = currentUserPosts.filter((post) => {
+      if (post.latitude == null || post.longitude == null) return false;
+      return distanceInKm(nearbyOrigin.latitude, nearbyOrigin.longitude, Number(post.latitude), Number(post.longitude)) <= 5;
+    });
+    renderPosts(nearby);
+    renderPostMarkers(nearby);
+    recordsMap.setView([nearbyOrigin.latitude, nearbyOrigin.longitude], 12);
+    status.textContent = `현재 위치에서 5km 안의 기록 ${nearby.length}개를 표시합니다.`;
+    document.getElementById("nearbyPostsBtn").hidden = true;
+    document.getElementById("allPostsBtn").hidden = false;
+  }, () => {
+    status.textContent = "위치 권한을 허용한 뒤 다시 시도해 주세요.";
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+function showAllPosts() {
+  nearbyOrigin = null;
+  renderPosts(currentUserPosts);
+  renderPostMarkers(currentUserPosts);
+  document.getElementById("nearbyStatus").textContent = "전체 위치 기록을 표시합니다.";
+  document.getElementById("nearbyPostsBtn").hidden = false;
+  document.getElementById("allPostsBtn").hidden = true;
+}
+
+function distanceInKm(lat1, lon1, lat2, lon2) {
+  const radians = (degrees) => degrees * Math.PI / 180;
+  const dLat = radians(lat2 - lat1);
+  const dLon = radians(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function validateImage(file) {
+  if (!file) return true;
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+    alert("JPG, PNG, WEBP, GIF 이미지 파일만 첨부할 수 있습니다.");
+    return false;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    alert("사진은 10MB 이하만 첨부할 수 있습니다.");
+    return false;
+  }
+  return true;
+}
+
+function setupComposer() {
+  const input = document.getElementById("imageFile");
+  input?.addEventListener("change", () => {
+    const file = input.files?.[0];
     currentImageAnalysis = "";
-
-    if (resultBox) {
-      resultBox.textContent = "";
-    }
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("이미지 파일만 첨부할 수 있습니다.");
-      imageInput.value = "";
+    const result = document.getElementById("imageAnalysisResult");
+    if (result) result.textContent = "";
+    document.getElementById("useImageAnalysisBtn").disabled = true;
+    document.getElementById("analyzeImageBtn").disabled = !file;
+    const preview = document.getElementById("imagePreview");
+    if (!file) {
+      preview.style.display = "none";
+      preview.removeAttribute("src");
       return;
     }
-
-    if (file.size > 10 * 1024 * 1024) {
-      alert("사진은 10MB 이하만 첨부할 수 있습니다.");
-      imageInput.value = "";
+    if (!validateImage(file)) {
+      input.value = "";
+      document.getElementById("analyzeImageBtn").disabled = true;
       return;
     }
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = "block";
+  });
 
+  document.getElementById("analyzeImageBtn").addEventListener("click", analyzeSelectedImage);
+  document.getElementById("useImageAnalysisBtn").addEventListener("click", () => {
+    if (!currentImageAnalysis) return;
+    const content = document.getElementById("content");
+    content.value = content.value.trim()
+      ? `${content.value.trim()}\n\n${currentImageAnalysis}`
+      : currentImageAnalysis;
+    content.focus();
+  });
+}
+
+async function analyzeSelectedImage() {
+  const file = document.getElementById("imageFile").files?.[0];
+  const button = document.getElementById("analyzeImageBtn");
+  const resultBox = document.getElementById("imageAnalysisResult");
+  if (!file || !validateImage(file)) return;
+
+  button.disabled = true;
+  resultBox.textContent = "사진을 분석하고 있어요...";
+  try {
+    const image = await fileToAIDataURL(file);
+    const response = await fetch("/api/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image,
+        prompt: "사진에 실제로 보이는 환경과 특징을 설명해 주세요. 확인할 수 없는 정보는 추측하지 마세요. 마지막에 '🍃 코로그 발견 가능성: 65%'와 같은 형식으로 0~100 사이 정수 퍼센트 하나와 사진에서 확인되는 근거를 적어 주세요. 65%는 형식 예시이므로 사진에 맞는 값을 판단해 주세요. 퍼센트 뒤에 '사진을 바탕으로 한 AI 추정이며 실제 확률이 아닙니다.'라고 표시하고 코로그가 실제로 있다고 단정하지 마세요."
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `AI 요청 실패 (HTTP ${response.status})`);
+    currentImageAnalysis = data.text || "";
+    if (!currentImageAnalysis.trim()) throw new Error("AI 분석 결과가 비어 있습니다.");
+    const probability = getKorokProbability(currentImageAnalysis);
+    resultBox.replaceChildren();
+    const text = document.createElement("p");
+    text.textContent = currentImageAnalysis;
+    resultBox.appendChild(text);
+    if (probability != null) {
+      const badge = document.createElement("strong");
+      badge.className = "korok-probability";
+      badge.textContent = `🍃 코로그 발견 가능성: ${probability}% — 사진을 바탕으로 한 AI 추정이며 실제 확률이 아닙니다.`;
+      resultBox.prepend(badge);
+    }
+    document.getElementById("useImageAnalysisBtn").disabled = false;
+  } catch (error) {
+    currentImageAnalysis = "";
+    resultBox.textContent = `사진 분석에 실패했습니다. ${error.message || "잠시 후 다시 시도해 주세요."}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-
-    reader.onload = function (event) {
-      if (preview) {
-        preview.src = event.target.result;
-        preview.style.display = "block";
-      }
-
-      if (analyzeButton) {
-        analyzeButton.disabled = false;
-      }
-    };
-
-    reader.onerror = function () {
-      alert("사진을 읽지 못했습니다.");
-    };
-
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
     reader.readAsDataURL(file);
   });
 }
 
-
-// =========================================================
-// AI 사진 분석
-// =========================================================
-
-async function analyzeImage() {
-  const imageInput =
-    document.getElementById("imageFile");
-
-  const analyzeButton =
-    document.getElementById("analyzeImageBtn");
-
-  const resultBox =
-    document.getElementById("imageAnalysisResult");
-
-  const file = imageInput?.files?.[0];
-
-  if (!file) {
-    alert("먼저 사진을 선택해 주세요.");
-    return;
-  }
-
-  if (!resultBox) {
-    alert("사진 분석 결과를 표시할 영역이 없습니다.");
-    return;
-  }
-
-  if (analyzeButton) {
-    analyzeButton.disabled = true;
-  }
-
-  resultBox.textContent = "사진을 분석하는 중...";
-
-  try {
-    const imageData = await new Promise(
-      function (resolve, reject) {
-        const reader = new FileReader();
-
-        reader.onload = () => resolve(reader.result);
-
-        reader.onerror = () =>
-          reject(
-            new Error("사진을 읽지 못했습니다.")
-          );
-
-        reader.readAsDataURL(file);
-      }
-    );
-
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        action: "analyze-image",
-        image: imageData,
-
-        prompt:
-          "이 사진에 보이는 장소와 주변 환경을 설명해줘. " +
-          "확실하지 않은 정보는 추측하지 말고, " +
-          "코로그가 나올 법한 특징이 있다면 함께 알려줘. " +
-          "게시판에 올릴 수 있는 자연스러운 한국어로 답해줘."
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        result.error ||
-        "사진 분석 요청에 실패했습니다."
-      );
-    }
-
-    const answer =
-      result.answer ||
-      result.result ||
-      result.text ||
-      result.content;
-
-    if (!answer) {
-      throw new Error(
-        "AI 분석 결과가 비어 있습니다."
-      );
-    }
-
-    // AI 분석 결과 저장
-    currentImageAnalysis = answer;
-
-    // 화면에 표시
-    resultBox.textContent = answer;
-
-  } catch (error) {
-    console.error(
-      "사진 분석 실패:",
-      error
-    );
-
-    resultBox.textContent =
-      "사진 분석에 실패했습니다. " +
-      (error.message ||
-        "잠시 후 다시 시도해 주세요.");
-
-  } finally {
-    if (analyzeButton) {
-      analyzeButton.disabled =
-        !imageInput?.files?.length;
-    }
-  }
+async function fileToAIDataURL(file) {
+  if (typeof createImageBitmap !== "function") return fileToDataURL(file);
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const compressed = await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("AI 분석용 사진을 준비하지 못했습니다."));
+    }, "image/jpeg", 0.78);
+  });
+  return fileToDataURL(compressed);
 }
 
-
-// =========================================================
-// AI 분석 결과를 게시글 내용에 넣기
-// =========================================================
-
-function insertImageAnalysis() {
-  const resultBox =
-    document.getElementById(
-      "imageAnalysisResult"
-    );
-
-  const contentBox =
-    document.getElementById("content");
-
-  if (!resultBox || !contentBox) return;
-
-  const analysis =
-    resultBox.textContent.trim();
-
-  if (
-    analysis &&
-    !analysis.includes("분석하는 중") &&
-    !analysis.includes("분석에 실패")
-  ) {
-    currentImageAnalysis = analysis;
-  }
-
-  if (
-    !analysis ||
-    analysis.includes("분석하는 중") ||
-    analysis.includes("분석에 실패")
-  ) {
-    alert(
-      "먼저 사진 분석을 완료해 주세요."
-    );
-    return;
-  }
-
-  if (contentBox.value.trim()) {
-    contentBox.value +=
-      "\n\n" + analysis;
-  } else {
-    contentBox.value = analysis;
-  }
-
-  contentBox.focus();
+async function uploadImage(file) {
+  if (!file) return null;
+  if (!validateImage(file)) throw new Error("이미지 파일 조건을 확인해 주세요.");
+  const extension = file.name.split(".").pop().toLowerCase();
+  const filePath = `${currentUser.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+  const { error } = await db.storage.from("post-images").upload(filePath, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type
+  });
+  if (error) throw error;
+  return db.storage.from("post-images").getPublicUrl(filePath).data.publicUrl;
 }
 
-
-// =========================================================
-// 초기화
-// =========================================================
-
-function initializeBoardFeatures() {
-  setupImageFeatures();
+function getKorokProbability(analysis) {
+  const line = String(analysis || "").match(/코로그 발견 가능성[^\n]*/i)?.[0] || "";
+  const percentage = line.match(/\b(\d{1,3})\s*%/);
+  if (!percentage) return null;
+  const value = Number(percentage[1]);
+  return value <= 100 ? value : null;
 }
-
-if (document.readyState === "loading") {
-  document.addEventListener(
-    "DOMContentLoaded",
-    initializeBoardFeatures
-  );
-} else {
-  initializeBoardFeatures();
-}
-
-
-// =========================================================
-// 게시글 작성
-// =========================================================
 
 async function addPost() {
-  const box =
-    document.getElementById("content");
-
-  const content =
-    box.value.trim();
-
+  const content = document.getElementById("content").value.trim();
+  const imageInput = document.getElementById("imageFile");
+  const file = imageInput.files?.[0];
+  const submitButton = document.getElementById("submitPostBtn");
   if (!content) {
-    alert("내용을 입력해 주세요.");
+    alert("게시글 내용을 입력해 주세요.");
     return;
   }
+  if (!validateImage(file)) return;
 
-  const addButton =
-    document.querySelector(
-      'button[onclick="addPost()"]'
-    );
-
-  if (addButton) {
-    addButton.disabled = true;
-  }
-
+  submitButton.disabled = true;
+  let uploadedUrl = null;
   try {
-    const imageInput =
-      document.getElementById("imageFile");
+    if (file) uploadedUrl = await uploadImage(file);
+    const values = {
+      content,
+      image_url: uploadedUrl || (editingPost ? editingPost.image_url : null),
+      latitude: selectedLatitude,
+      longitude: selectedLongitude,
+      analysis: currentImageAnalysis || (!file && editingPost ? editingPost.analysis : null)
+    };
 
-    const file =
-      imageInput.files[0];
-
-    let imageUrl = null;
-
-
-    // -------------------------------------------------------
-    // 사진 업로드
-    // -------------------------------------------------------
-
-    if (file) {
-
-      if (!file.type.startsWith("image/")) {
-        alert(
-          "이미지 파일만 첨부할 수 있습니다."
-        );
-        return;
-      }
-
-      if (file.size > 10 * 1024 * 1024) {
-        alert(
-          "사진은 10MB 이하만 업로드할 수 있습니다."
-        );
-        return;
-      }
-
-      const extension =
-        file.name
-          .split(".")
-          .pop()
-          .toLowerCase();
-
-      const fileName =
-        currentUser.id +
-        "/" +
-        Date.now() +
-        "-" +
-        (
-          crypto.randomUUID
-            ? crypto.randomUUID()
-            : Date.now()
-        ) +
-        "." +
-        extension;
-
-
-      const {
-        error: uploadError
-      } =
-        await db.storage
-          .from("post-images")
-          .upload(
-            fileName,
-            file,
-            {
-              cacheControl: "3600",
-              upsert: false,
-              contentType: file.type
-            }
-          );
-
-
-      if (uploadError) {
-
-        console.error(
-          "사진 업로드 실패:",
-          uploadError
-        );
-
-        alert(
-          "사진 업로드에 실패했습니다.\n" +
-          uploadError.message
-        );
-
-        return;
-      }
-
-
-      const {
-        data: publicUrlData
-      } =
-        db.storage
-          .from("post-images")
-          .getPublicUrl(
-            fileName
-          );
-
-
-      imageUrl =
-        publicUrlData.publicUrl;
+    let result;
+    if (editingPost) {
+      result = await db.from("posts").update(values)
+        .eq("id", editingPost.id)
+        .eq("user_id", currentUser.id)
+        .select("id")
+        .maybeSingle();
+    } else {
+      result = await db.from("posts").insert({
+        ...values,
+        nickname: currentUser.email?.split("@")[0] || "여행자",
+        user_id: currentUser.id
+      });
     }
 
-
-    // -------------------------------------------------------
-    // 게시글 저장
-    // -------------------------------------------------------
-
-    const {
-      error
-    } =
-      await db
-        .from("posts")
-        .insert({
-
-          content:
-            content,
-
-          nickname:
-            currentUser.email
-              .split("@")[0],
-
-          user_id:
-            currentUser.id,
-
-          image_url:
-            imageUrl,
-
-          latitude:
-            selectedLatitude,
-
-          longitude:
-            selectedLongitude,
-
-          // ⭐ AI 사진 분석 결과 저장
-          analysis:
-            currentImageAnalysis || null
-        });
-
-
-    if (error) {
-
-      if (imageUrl) {
-
-        await db.storage
-          .from("post-images")
-          .remove([
-            imageUrl
-              .split("/post-images/")[1]
-          ]);
-      }
-
-      console.error(
-        "쓰기 실패:",
-        error
-      );
-
-      alert(
-        "쓰기 실패: " +
-        error.message
-      );
-
-      return;
+    if (result.error) throw result.error;
+    if (editingPost && !result.data) {
+      throw new Error("수정된 게시글이 없습니다. 권한 또는 RLS 정책을 확인해 주세요.");
     }
-
-
-    // -------------------------------------------------------
-    // 입력 초기화
-    // -------------------------------------------------------
-
-    box.value = "";
-
-    imageInput.value = "";
-
-    currentImageAnalysis = "";
-
-
-    const preview =
-      document.getElementById(
-        "imagePreview"
-      );
-
-    if (preview) {
-      preview.src = "";
-      preview.style.display = "none";
-    }
-
-
-    selectedLatitude = null;
-    selectedLongitude = null;
-
-
-    if (
-      selectedMarker &&
-      postMap
-    ) {
-      postMap.removeLayer(
-        selectedMarker
-      );
-
-      selectedMarker = null;
-    }
-
-
-    const locationBox =
-      document.getElementById(
-        "selectedLocation"
-      );
-
-    if (locationBox) {
-      locationBox.textContent =
-        "아직 위치를 선택하지 않았습니다.";
-    }
-
-
-    const aiBox =
-      document.getElementById(
-        "aiBox"
-      );
-
-    if (aiBox) {
-      aiBox.textContent = "";
-    }
-
-
+    resetComposer();
     await loadPosts();
-
+  } catch (error) {
+    console.error("게시글 저장 실패:", error);
+    alert(`게시글을 저장하지 못했습니다. ${error.message || "오류 내용을 확인해 주세요."}`);
   } finally {
-
-    if (addButton) {
-      addButton.disabled = false;
-    }
-
+    submitButton.disabled = false;
   }
 }
 
+function resetComposer() {
+  document.getElementById("content").value = "";
+  document.getElementById("imageFile").value = "";
+  document.getElementById("imagePreview").style.display = "none";
+  document.getElementById("imagePreview").removeAttribute("src");
+  document.getElementById("imageAnalysisResult").textContent = "";
+  document.getElementById("aiBox").textContent = "";
+  document.getElementById("analyzeImageBtn").disabled = true;
+  document.getElementById("useImageAnalysisBtn").disabled = true;
+  currentImageAnalysis = "";
+  clearSelectedLocation();
+  editingPost = null;
+  document.getElementById("writeHeading").textContent = "새 제보 작성";
+  document.getElementById("submitPostBtn").textContent = "게시글 등록";
+  document.getElementById("cancelEditBtn").hidden = true;
+}
 
-// =========================================================
-// 게시글 삭제
-// =========================================================
-
-async function deletePost(id) {
-
-  const {
-    error
-  } =
-    await db
-      .from("posts")
-      .delete()
-      .eq("id", id);
-
-
-  if (error) {
-
-    console.error(
-      "삭제 실패:",
-      error
-    );
-
-    alert(
-      "삭제 실패: " +
-      error.message
-    );
-
+function startEditing(post) {
+  if (!isOwnPost(post)) {
+    alert("본인이 작성한 게시글만 수정할 수 있습니다.");
     return;
   }
+  editingPost = post;
+  closePostModal();
+  document.getElementById("writeHeading").textContent = "게시글 수정";
+  document.getElementById("submitPostBtn").textContent = "수정 저장";
+  document.getElementById("cancelEditBtn").hidden = false;
+  document.getElementById("content").value = post.content || "";
+  currentImageAnalysis = post.analysis || "";
+  if (post.analysis) document.getElementById("imageAnalysisResult").textContent = post.analysis;
+  selectedLatitude = post.latitude == null ? null : Number(post.latitude);
+  selectedLongitude = post.longitude == null ? null : Number(post.longitude);
+  if (selectedLatitude != null && postMap) {
+    postMap.setView([selectedLatitude, selectedLongitude], 15);
+    setSelectedLocation(selectedLatitude, selectedLongitude);
+  }
+  if (post.image_url) {
+    const preview = document.getElementById("imagePreview");
+    preview.src = post.image_url;
+    preview.style.display = "block";
+  }
+  document.getElementById("writeHeading").scrollIntoView({ behavior: "smooth" });
+}
 
+function editCurrentPost() {
+  if (currentPost) startEditing(currentPost);
+}
 
+function cancelEdit() {
+  resetComposer();
+}
+
+async function deletePost(post) {
+  if (!isOwnPost(post)) {
+    alert("본인이 작성한 게시글만 삭제할 수 있습니다.");
+    return;
+  }
+  if (!confirm("이 게시글을 삭제할까요?")) return;
+  const { error } = await db.from("posts").delete()
+    .eq("id", post.id)
+    .eq("user_id", currentUser.id);
+  if (error) {
+    alert(`삭제하지 못했습니다. ${error.message}`);
+    return;
+  }
+  closePostModal();
   await loadPosts();
 }
 
-
-// =========================================================
-// AI 문장 다듬기
-// =========================================================
+function deleteCurrentPost() {
+  if (currentPost) deletePost(currentPost);
+}
 
 async function polish() {
-
-  const content =
-    document
-      .getElementById("content")
-      .value
-      .trim();
-
+  const content = document.getElementById("content").value.trim();
+  const result = document.getElementById("aiBox");
+  const button = document.getElementById("aiBtn");
   if (!content) return;
-
-
-  const btn =
-    document.getElementById("aiBtn");
-
-  const box =
-    document.getElementById("aiBox");
-
-
-  btn.disabled = true;
-
-  box.textContent =
-    "생각하는 중...";
-
-
+  button.disabled = true;
+  result.textContent = "문장을 다듬는 중...";
   try {
-
-    box.textContent =
-      await askAI(
-
-        "다음 문장을 게시판에 올리기 좋게 " +
-        "자연스럽고 재미있게 다듬어줘. " +
-        "한 문장으로만 답해줘. " +
-        "원래 의미는 바꾸지 마.\n\n" +
-        content
-
-      );
-
-  } catch (e) {
-
-    console.error(
-      "AI 문장 다듬기 실패:",
-      e
-    );
-
-    box.textContent =
-      "AI 기능은 vercel dev 또는 " +
-      "배포된 주소에서만 동작합니다.";
-
+    result.textContent = await askAI(`다음 문장을 게시판에 올리기 좋게 자연스럽게 다듬어줘. 원래 의미를 유지해.\n\n${content}`);
+  } catch (error) {
+    result.textContent = `AI 요청 실패: ${error.message}`;
   } finally {
-
-    btn.disabled = false;
-
+    button.disabled = false;
   }
 }
-
-
-// =========================================================
-// AI 자연어 게시판 검색
-// =========================================================
 
 async function aiSearchPosts() {
-
-  const input =
-    document.getElementById(
-      "aiSearchInput"
-    );
-
-  const resultBox =
-    document.getElementById(
-      "aiSearchResult"
-    );
-
-  const btn =
-    document.getElementById(
-      "aiSearchBtn"
-    );
-
-
-  const query =
-    input.value.trim();
-
-
+  const input = document.getElementById("aiSearchInput");
+  const resultBox = document.getElementById("aiSearchResult");
+  const button = document.getElementById("aiSearchBtn");
+  const query = input.value.trim();
   if (!query) {
-
-    resultBox.textContent =
-      "검색 내용을 입력해 주세요.";
-
+    resultBox.textContent = "검색 내용을 입력해 주세요.";
     return;
   }
-
-
-  btn.disabled = true;
-
-  resultBox.textContent =
-    "게시글을 분석하는 중...";
-
-
+  if (!currentUserPosts.length) {
+    resultBox.textContent = "검색할 게시글이 없습니다.";
+    return;
+  }
+  button.disabled = true;
+  resultBox.textContent = "게시글을 살펴보고 있어요...";
   try {
-
-    const {
-      data,
-      error
-    } =
-      await db
-        .from("posts")
-        .select(
-          "id, nickname, content, created_at"
-        )
-        .order(
-          "created_at",
-          {
-            ascending: false
-          }
-        )
-        .limit(50);
-
-
-    if (error) {
-      throw error;
-    }
-
-
-    if (
-      !data ||
-      data.length === 0
-    ) {
-
-      resultBox.textContent =
-        "검색할 게시글이 없습니다.";
-
-      return;
-    }
-
-
-    const postsText =
-      data
-        .map(function (p) {
-
-          return (
-            "[게시글 ID: " +
-            p.id +
-            "]\n" +
-
-            "작성자: " +
-            p.nickname +
-            "\n" +
-
-            "내용: " +
-            p.content
-          );
-
-        })
-        .join("\n\n");
-
-
-    const prompt =
-
-      "너는 게시판 검색 도우미야.\n" +
-
-      "사용자가 자연어로 요청한 내용을 읽고 " +
-      "아래 게시글 중 관련 있는 게시글만 골라줘.\n\n" +
-
-      "규칙:\n" +
-
-      "1. 게시글에 실제로 적힌 내용만 근거로 판단해.\n" +
-
-      "2. 없는 정보를 만들어내지 마.\n" +
-
-      "3. 관련이 약한 글은 제외해.\n" +
-
-      "4. 최대 5개만 골라.\n" +
-
-      "5. 없으면 '관련 게시글이 없습니다.'라고 답해.\n\n" +
-
-      "사용자 검색 요청:\n" +
-
-      query +
-
-      "\n\n" +
-
-      "게시글 목록:\n" +
-
-      postsText +
-
-      "\n\n" +
-
-      "형식:\n" +
-
-      "[게시글 ID: 숫자]\n" +
-
-      "이유: 관련된 이유 한 문장";
-
-
-    const answer =
-      await askAI(prompt);
-
-
-    resultBox.textContent =
-      answer;
-
-
-  } catch (e) {
-
-    console.error(
-      "AI 검색 실패:",
-      e
+    const compactPosts = currentUserPosts.slice(0, 80).map((post) => ({
+      id: post.id,
+      author: post.nickname || "익명",
+      text: post.content || "",
+      photoAnalysis: post.analysis || "",
+      hasPhoto: Boolean(post.image_url),
+      hasLocation: post.latitude != null && post.longitude != null
+    }));
+    const answer = await askAI(
+      "아래 게시글만 근거로 자연어 검색과 관련된 글을 찾으세요. 사진 분석 내용도 단서로 쓰되 사진 파일 자체를 보았다고 주장하지 마세요. 최대 5개, 관련 글이 없으면 없다고 답하세요. 정확히 JSON 배열로 [ {\"id\": 게시글ID, \"reason\": \"선정 이유\"} ] 형식으로 응답하세요.\n검색 요청: " + query + "\n게시글: " + JSON.stringify(compactPosts)
     );
-
-    resultBox.textContent =
-      "AI 검색에 실패했습니다. " +
-      "잠시 후 다시 시도해 주세요.";
-
+    renderSearchResults(answer, resultBox);
+  } catch (error) {
+    resultBox.textContent = `AI 검색에 실패했습니다. ${error.message}`;
   } finally {
-
-    btn.disabled = false;
-
+    button.disabled = false;
   }
 }
 
-
-// =========================================================
-// AI 검색 Enter
-// =========================================================
-
-document.addEventListener(
-  "DOMContentLoaded",
-  function () {
-
-    const input =
-      document.getElementById(
-        "aiSearchInput"
-      );
-
-    if (!input) return;
-
-
-    input.addEventListener(
-      "keydown",
-      function (event) {
-
-        if (
-          event.key === "Enter"
-        ) {
-
-          event.preventDefault();
-
-          aiSearchPosts();
-
-        }
-
-      }
-    );
-
+function renderSearchResults(answer, container) {
+  let matches = [];
+  try {
+    const json = answer.match(/\[[\s\S]*\]/)?.[0];
+    if (json) matches = JSON.parse(json);
+  } catch (error) {
+    console.warn("AI 검색 결과 JSON 해석 실패:", error);
   }
-);
-
-
-// =========================================================
-// 사진 AI 분석
-// =========================================================
-
-function setupImageAnalysis() {
-
-  const imageInput =
-    document.getElementById(
-      "imageFile"
-    );
-
-  const analyzeBtn =
-    document.getElementById(
-      "analyzeImageBtn"
-    );
-
-  const resultBox =
-    document.getElementById(
-      "imageAnalysisResult"
-    );
-
-  const contentBox =
-    document.getElementById(
-      "content"
-    );
-
-  const useResultBtn =
-    document.getElementById(
-      "useImageAnalysisBtn"
-    );
-
-
-  if (
-    !imageInput ||
-    !analyzeBtn ||
-    !resultBox
-  ) {
+  container.replaceChildren();
+  if (!matches.length) {
+    container.textContent = answer.includes("없") ? "관련 게시글이 없습니다." : answer;
     return;
   }
-
-  if (imageInput.dataset.boardAnalysisBound === "true") return;
-  imageInput.dataset.boardAnalysisBound = "true";
-
-
-  // -------------------------------------------------------
-  // 사진 선택
-  // -------------------------------------------------------
-
-  imageInput.addEventListener(
-    "change",
-    function () {
-
-      const file =
-        imageInput.files[0];
-
-
-      currentImageAnalysis = "";
-
-      resultBox.textContent = "";
-
-
-      if (useResultBtn) {
-        useResultBtn.disabled = true;
-      }
-
-
-      analyzeBtn.disabled =
-        !file;
-
-    }
-  );
-
-
-  // -------------------------------------------------------
-  // AI 분석
-  // -------------------------------------------------------
-
-  analyzeBtn.addEventListener(
-    "click",
-    async function () {
-
-      const file =
-        imageInput.files[0];
-
-
-      if (!file) {
-
-        resultBox.textContent =
-          "먼저 사진을 선택해 주세요.";
-
-        return;
-      }
-
-
-      if (
-        !file.type.startsWith("image/")
-      ) {
-
-        resultBox.textContent =
-          "이미지 파일만 분석할 수 있습니다.";
-
-        return;
-      }
-
-
-      if (
-        file.size >
-        10 * 1024 * 1024
-      ) {
-
-        resultBox.textContent =
-          "사진은 10MB 이하만 분석할 수 있습니다.";
-
-        return;
-      }
-
-
-      analyzeBtn.disabled =
-        true;
-
-
-      resultBox.textContent =
-        "사진을 분석하고 있어요...";
-
-
-      try {
-
-        const imageData =
-          await fileToDataURL(file);
-
-
-        const response =
-          await fetch(
-            "/api/ai",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json"
-              },
-
-              body:
-                JSON.stringify({
-
-                  action:
-                    "analyze-image",
-
-                  image:
-                    imageData,
-
-                  prompt:
-
-                    "이 사진을 보고 코로그 제보 게시판에 " +
-                    "올릴 설명을 작성해줘. " +
-
-                    "사진에서 실제로 확인할 수 있는 특징만 말하고, " +
-
-                    "확실하지 않은 장소나 정보를 지어내지 마. " +
-
-                    "자연스럽고 짧은 한국어 문장으로 작성해줘."
-
-                })
-            }
-          );
-
-
-        const responseText =
-          await response.text();
-
-        let data = null;
-
-        if (responseText.trim()) {
-          try {
-            data = JSON.parse(responseText);
-          } catch (parseError) {
-            data = null;
-          }
-        }
-
-
-        if (!response.ok) {
-
-          if (response.status === 404) {
-            throw new Error(
-              "AI API를 찾을 수 없습니다. Live Server 대신 " +
-              "vercel dev 또는 배포된 주소에서 실행해 주세요."
-            );
-          }
-
-          if (response.status === 405) {
-            throw new Error(
-              "현재 웹 서버가 /api/ai의 POST 요청을 허용하지 않습니다. " +
-              "VS Code Live Server가 아닌 vercel dev 또는 " +
-              "Vercel 배포 주소에서 게시판을 열어 주세요."
-            );
-          }
-
-          throw new Error(
-            data?.error ||
-            "사진 분석 요청에 실패했습니다. " +
-            "(HTTP " + response.status + ")"
-          );
-
-        }
-
-        if (!data) {
-          throw new Error(
-            "AI API에서 비어 있거나 JSON이 아닌 응답을 받았습니다. " +
-            "Live Server 대신 vercel dev 또는 배포된 주소에서 실행해 주세요."
-          );
-        }
-
-
-        currentImageAnalysis =
-
-          data.text ||
-
-          data.answer ||
-
-          data.result ||
-
-          data.content ||
-
-          "";
-
-
-        if (
-          typeof currentImageAnalysis !==
-            "string" ||
-
-          !currentImageAnalysis.trim()
-        ) {
-
-          throw new Error(
-            "AI 분석 결과가 비어 있습니다."
-          );
-
-        }
-
-
-        resultBox.textContent =
-          currentImageAnalysis;
-
-
-        if (useResultBtn) {
-          useResultBtn.disabled =
-            false;
-        }
-
-
-      } catch (error) {
-
-        console.error(
-          "사진 AI 분석 실패:",
-          error
-        );
-
-
-        resultBox.textContent =
-          "사진 분석에 실패했습니다.\n" +
-          (
-            error.message ||
-            "잠시 후 다시 시도해 주세요."
-          );
-
-      } finally {
-
-        analyzeBtn.disabled =
-          false;
-
-      }
-
-    }
-  );
-
-
-  // -------------------------------------------------------
-  // 분석 결과를 게시글에 넣기
-  // -------------------------------------------------------
-
-  if (useResultBtn) {
-
-    useResultBtn.addEventListener(
-      "click",
-      function () {
-
-        if (
-          !currentImageAnalysis ||
-          !contentBox
-        ) {
-          return;
-        }
-
-
-        contentBox.value =
-          currentImageAnalysis;
-
-
-        contentBox.focus();
-
-      }
-    );
-
+  matches.forEach((match) => {
+    const post = currentUserPosts.find((item) => String(item.id) === String(match.id));
+    if (!post) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "search-result";
+    button.textContent = `${post.nickname || "익명"}: ${post.content || "사진 제보"} — ${match.reason || "관련 기록"}`;
+    button.addEventListener("click", () => openPostModal(post));
+    container.appendChild(button);
+  });
+  if (!container.childElementCount) container.textContent = "관련 게시글이 없습니다.";
+}
+
+function handleEditQuery() {
+  const editId = new URLSearchParams(location.search).get("edit");
+  if (!editId) return;
+  const post = currentUserPosts.find((item) => String(item.id) === editId);
+  if (post && isOwnPost(post)) startEditing(post);
+  else alert("수정할 게시글을 찾을 수 없거나 권한이 없습니다.");
+  history.replaceState(null, "", location.pathname);
+}
+
+setupComposer();
+document.getElementById("aiSearchInput")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    aiSearchPosts();
   }
-
-}
-
-
-// =========================================================
-// 파일 → Base64 Data URL
-// =========================================================
-
-function fileToDataURL(file) {
-
-  return new Promise(
-    function (resolve, reject) {
-
-      const reader =
-        new FileReader();
-
-
-      reader.onload =
-        function () {
-
-          resolve(
-            reader.result
-          );
-
-        };
-
-
-      reader.onerror =
-        function () {
-
-          reject(
-            new Error(
-              "사진을 읽지 못했습니다."
-            )
-          );
-
-        };
-
-
-      reader.readAsDataURL(file);
-
-    }
-  );
-
-}
-
-
-// =========================================================
-// 사진 AI 분석 초기화
-// =========================================================
-
-if (
-  document.readyState ===
-  "loading"
-) {
-
-  document.addEventListener(
-    "DOMContentLoaded",
-    setupImageAnalysis
-  );
-
-} else {
-
-  setupImageAnalysis();
-
-}
+});

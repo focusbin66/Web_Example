@@ -34,11 +34,11 @@
 
     .post-image {
       width: 100%;
-      max-width: 400px;
-      max-height: 260px;
+      max-height: 360px;
       object-fit: cover;
-      border-radius: 10px;
-      margin-top: 10px;
+      border-radius: 16px;
+      margin: 12px 0;
+      background: #e8f0d9;
     }
 
     .post-meta {
@@ -87,7 +87,7 @@
     }
 
     #modalImage {
-      display: none;
+      display: block;
       width: 100%;
       max-height: 350px;
       object-fit: contain;
@@ -100,12 +100,37 @@
       font-size: 14px;
     }
 
+    .visit-status {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      background: #f1f8e9;
+    }
+
+    .visit-status h3 { margin: 0 0 8px; }
+    .visit-status__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .visit-status__actions button.is-selected {
+      background: #315d3b;
+      color: #fff;
+      border-color: #315d3b;
+    }
+    .visit-status__actions button:disabled { opacity: 0.6; cursor: wait; }
+    #visitStatusMessage { margin-bottom: 0; }
+
     #modalAnalysis {
       margin-top: 16px;
       padding: 12px;
       background: #f1f8e9;
       border-radius: 10px;
       white-space: pre-wrap;
+    }
+
+    .korok-probability {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #e7f0d5;
+      color: #315d3b;
     }
 
     #modalContent {
@@ -118,6 +143,63 @@
       margin: 12px 0;
       border-radius: 10px;
       z-index: 0;
+    }
+
+    #recordsMap {
+      height: 420px;
+      margin: 14px 0;
+      border: 3px solid #cbdab7;
+      border-radius: 18px;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .post-card__actions,
+    .modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .post-card__actions button,
+    .modal-actions button {
+      padding: 8px 13px;
+    }
+
+    .post-card__save,
+    #savePostBtn {
+      color: #a34854;
+      background: #fff8f6;
+      border-color: #e8c6c4;
+    }
+
+    .post-card__save.is-saved,
+    #savePostBtn.is-saved {
+      color: #fff;
+      background: #b65e66;
+      border-color: #b65e66;
+    }
+
+    .post-card__content {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.6;
+    }
+
+    #modalImage {
+      max-height: 60vh;
+      background: #e8f0d9;
+    }
+
+    #modalImage[hidden] { display: none; }
+
+    .search-result {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      text-align: left;
+      border-radius: 14px;
     }
 
     #imagePreview {
@@ -153,6 +235,10 @@
       }
 
       #modalAnalysis {
+        background: #2c3a2a;
+      }
+
+      .visit-status {
         background: #2c3a2a;
       }
     }
@@ -209,17 +295,40 @@
       <div id="imageAnalysisResult" aria-live="polite"></div>
 
       <h3>발견 위치 (선택)</h3>
-      <button type="button" onclick="useMyLocation()">
-        현재 위치 사용
-      </button>
+      <div class="write-actions">
+        <button type="button" onclick="useMyLocation()">
+          현재 위치 사용
+        </button>
+        <button type="button" onclick="clearSelectedLocation()">
+          위치 선택 지우기
+        </button>
+      </div>
       <p id="selectedLocation">아직 위치를 선택하지 않았습니다.</p>
       <div id="postMap" aria-label="지도에서 발견 위치 선택"></div>
 
       <div class="write-actions">
-        <button type="button" onclick="addPost()">
+        <button id="submitPostBtn" type="button" onclick="addPost()">
           게시글 등록
         </button>
+        <button id="cancelEditBtn" type="button" onclick="cancelEdit()" hidden>
+          수정 취소
+        </button>
       </div>
+    </section>
+
+    <section class="card forest-card" aria-labelledby="recordsMapHeading">
+      <h2 id="recordsMapHeading">🗺️ 발견 기록 지도</h2>
+      <p>코로그 마커를 눌러 사진과 제보 내용을 확인해 보세요.</p>
+      <div class="write-actions">
+        <button id="nearbyPostsBtn" type="button" onclick="toggleNearbyPosts()">
+          📍 현재 위치 주변 기록 보기
+        </button>
+        <button id="allPostsBtn" type="button" onclick="showAllPosts()" hidden>
+          전체 기록 보기
+        </button>
+      </div>
+      <p id="nearbyStatus" class="map-description" aria-live="polite"></p>
+      <div id="recordsMap" aria-label="게시글 위치 지도"></div>
     </section>
 
     <!-- AI 검색 -->
@@ -272,9 +381,33 @@
 
       <div id="modalLocation"></div>
 
+      <section class="visit-status" aria-labelledby="visitStatusHeading">
+        <h3 id="visitStatusHeading">🧭 방문 상태</h3>
+        <p id="visitCount" aria-live="polite">방문 기록을 불러오는 중...</p>
+        <div class="visit-status__actions">
+          <button id="markPlannedBtn" type="button" data-status="planned">가기 전</button>
+          <button id="markVisitedBtn" type="button" data-status="visited">다녀왔어요</button>
+          <button id="clearVisitStatusBtn" type="button">상태 선택 취소</button>
+        </div>
+        <p id="visitStatusMessage" class="post-meta" aria-live="polite"></p>
+      </section>
+
       <div id="modalAnalysis" hidden>
         <h3>🍃 AI 사진 분석</h3>
+        <strong id="modalProbability" class="korok-probability" hidden></strong>
         <p id="modalAnalysisText"></p>
+      </div>
+      <div class="modal-actions">
+        <button id="savePostBtn" type="button" onclick="togglePostSave()">♡ 저장</button>
+        <button id="showPostOnMapBtn" type="button" onclick="showPostOnMap()" hidden>
+          📍 지도에서 위치 보기
+        </button>
+        <button id="editPostBtn" type="button" onclick="editCurrentPost()" hidden>
+          수정
+        </button>
+        <button id="deletePostBtn" type="button" onclick="deleteCurrentPost()" hidden>
+          삭제
+        </button>
       </div>
     </div>
   </div>

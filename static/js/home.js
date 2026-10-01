@@ -1,6 +1,10 @@
 
 let homeMap = null;
 let homeMapMarkers = null;
+let homePosts = [];
+let myLocationMarker = null;
+let myLocationAccuracy = null;
+let hasCenteredOnMyLocation = false;
 
 function createLeafMarker(latitude, longitude) {
   return L.marker(
@@ -24,27 +28,6 @@ function escapeHTML(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-// 픽셀 코로그풍 지도 마커
-function createKorokIcon() {
-  return L.divIcon({
-    className: "korok-marker",
-    html: `
-      <div class="pixel-korok">
-        <div class="pixel-korok__leaf"></div>
-        <div class="pixel-korok__mask">
-          <span class="pixel-korok__eye pixel-korok__eye--left"></span>
-          <span class="pixel-korok__eye pixel-korok__eye--right"></span>
-        </div>
-        <div class="pixel-korok__body"></div>
-        <div class="pixel-korok__feet"></div>
-      </div>
-    `,
-    iconSize: [48, 58],
-    iconAnchor: [24, 54],
-    popupAnchor: [0, -52]
-  });
 }
 
 // 로그인 상태 표시
@@ -122,10 +105,11 @@ async function loadHomePosts() {
   const { data, error } = await db
     .from("posts")
     .select(
-      "id, nickname, content, image_url, latitude, longitude, created_at"
+      "id, image_url, analysis, latitude, longitude"
     )
     .not("latitude", "is", null)
     .not("longitude", "is", null)
+    .not("image_url", "is", null)
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -135,12 +119,18 @@ async function loadHomePosts() {
     return;
   }
 
-  homeMapMarkers.clearLayers();
+  homePosts = data || [];
+  renderHomePosts();
+}
 
+function renderHomePosts() {
+  if (!homeMapMarkers) return;
+  homeMapMarkers.clearLayers();
+  const filter = document.getElementById("probabilityFilter")?.value || "all";
   const bounds = [];
   let displayedCount = 0;
 
-  (data || []).forEach((post) => {
+  homePosts.forEach((post) => {
     const lat = Number(post.latitude);
     const lng = Number(post.longitude);
 
@@ -156,39 +146,28 @@ async function loadHomePosts() {
       return;
     }
 
-    const marker = createLeafMarker(lat, lng);
-
     const imageURL =
       typeof post.image_url === "string" &&
       post.image_url.startsWith("https://")
         ? post.image_url
         : "";
 
-    const imageHTML = imageURL
-      ? `
-        <img
-          src="${escapeHTML(imageURL)}"
-          alt="게시글 사진"
-          loading="lazy"
-        >
-      `
-      : "";
+    if (!imageURL) return;
+
+    const probability = getKorokProbability(post.analysis);
+    if (!matchesProbabilityFilter(probability, filter)) return;
+    const marker = createLeafMarker(lat, lng);
+
+    const summary = getKorokSummary(post);
+    const probabilityText = probability == null
+      ? "퍼센트 분석 없음"
+      : `코로그 발견 가능성 ${probability}% — 사진을 바탕으로 한 AI 추정이며 실제 확률이 아닙니다.`;
 
     const popupHTML = `
       <div class="map-popup">
-        <strong>
-          ${escapeHTML(post.nickname || "익명 여행자")}
-        </strong>
-
-        <p>${escapeHTML(post.content || "")}</p>
-
-        ${imageHTML}
-
-        <p>
-          <a href="/pages/board.html">
-            게시판에서 보기 →
-          </a>
-        </p>
+        <img src="${escapeHTML(imageURL)}" alt="게시글 사진" loading="lazy">
+        <strong>🍃 ${escapeHTML(probabilityText)}</strong>
+        <p class="map-summary">🍃 ${escapeHTML(summary)}</p>
       </div>
     `;
 
@@ -200,24 +179,105 @@ async function loadHomePosts() {
   });
 
   if (bounds.length > 0) {
-    homeMap.fitBounds(bounds, {
-      padding: [30, 30],
-      maxZoom: 15
-    });
+    if (!hasCenteredOnMyLocation) {
+      homeMap.fitBounds(bounds, {
+        padding: [30, 30],
+        maxZoom: 15
+      });
+    }
 
-    setMapStatus(
-      `🍃 지도에서 ${displayedCount}개의 게시글 위치를 찾았어요.`
-    );
+    setMapStatus(`🍃 선택한 확률 조건에 맞는 게시글 ${displayedCount}개를 표시하고 있어요.`);
   } else {
-    homeMap.setView([37.5665, 126.9780], 12);
-
-    setMapStatus(
-      "아직 표시할 위치가 없어요. 첫 번째 이야기를 남겨보세요!"
-    );
+    setMapStatus("선택한 확률 조건에 맞는 위치 게시글이 없습니다.");
   }
+}
+
+function showMyLocation() {
+  const status = document.getElementById("locationStatus");
+  const button = document.getElementById("showMyLocationBtn");
+  if (!navigator.geolocation) {
+    if (status) status.textContent = "이 브라우저에서는 현재 위치 기능을 사용할 수 없습니다.";
+    return;
+  }
+
+  if (button) button.disabled = true;
+  if (status) status.textContent = "현재 위치를 확인하고 있어요...";
+  navigator.geolocation.getCurrentPosition((position) => {
+    const { latitude, longitude, accuracy } = position.coords;
+    const location = [latitude, longitude];
+    hasCenteredOnMyLocation = true;
+
+    if (!myLocationMarker) {
+      myLocationMarker = L.circleMarker(location, {
+        radius: 9,
+        color: "#ffffff",
+        weight: 3,
+        fillColor: "#2478e5",
+        fillOpacity: 1
+      }).addTo(homeMap).bindPopup("현재 내 위치");
+      myLocationAccuracy = L.circle(location, {
+        radius: accuracy,
+        color: "#2478e5",
+        weight: 1,
+        fillColor: "#2478e5",
+        fillOpacity: 0.12
+      }).addTo(homeMap);
+    } else {
+      myLocationMarker.setLatLng(location);
+      myLocationAccuracy.setLatLng(location).setRadius(accuracy);
+    }
+
+    homeMap.setView(location, Math.max(homeMap.getZoom(), 15));
+    myLocationMarker.openPopup();
+    if (status) status.textContent = `현재 위치를 파란색 마커로 표시했어요. (정확도 약 ${Math.round(accuracy)}m)`;
+    if (button) button.disabled = false;
+  }, (error) => {
+    const message = error.code === error.PERMISSION_DENIED
+      ? "위치 권한이 거부되었습니다. 브라우저에서 위치 권한을 허용해 주세요."
+      : error.code === error.TIMEOUT
+        ? "위치 확인 시간이 초과되었습니다. 다시 시도해 주세요."
+        : "현재 위치를 가져오지 못했습니다. 위치 설정을 확인해 주세요.";
+    if (status) status.textContent = message;
+    if (button) button.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+
+function getKorokProbability(analysis) {
+  const line = String(analysis || "").match(/코로그 발견 가능성[^\n]*/i)?.[0] || "";
+  const percentage = line.match(/\b(\d{1,3})\s*%/);
+  if (!percentage) return null;
+  const value = Number(percentage[1]);
+  return value <= 100 ? value : null;
+}
+
+function matchesProbabilityFilter(probability, filter) {
+  if (filter === "all") return true;
+  if (filter === "none") return probability == null;
+  if (probability == null) return false;
+  const [minimum, maximum] = filter.split("-").map(Number);
+  return probability >= minimum && probability <= maximum;
+}
+
+function getKorokSummary(post) {
+  const analysis = String(post.analysis || "");
+  const explicitLine = analysis.match(/코로그 발견 가능성 한 줄\s*[:：]?\s*([^\n]+)/i);
+  if (explicitLine) return explicitLine[1].trim().replace(/\s+/g, " ");
+
+  const description = analysis.split(/(?:📷\s*사진 설명|🌿\s*눈여겨볼 요소)/)[1] || analysis;
+  const text = description
+    .split(/\n\s*\n/)[0]
+    .replace(/🍃.*$/s, "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!text) return "AI 요약이 아직 없습니다.";
+
+  const firstSentence = text.match(/^.*?[.!?。](?:\s|$)/)?.[0] || text;
+  return `사진 내용 추정 — ${firstSentence.trim().slice(0, 110)}`;
 }
 
 // 페이지 로드 시 지도 초기화
 document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("probabilityFilter")?.addEventListener("change", renderHomePosts);
+  document.getElementById("showMyLocationBtn")?.addEventListener("click", showMyLocation);
   initHomeMap();
 });
